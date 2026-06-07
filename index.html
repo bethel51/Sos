@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Silent SOS - Personal Safety & Emergency Response App</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+  <!-- Global Toast Notification System -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Global Header Bar -->
+  <header class="app-global-header">
+    <div class="logo-container">
+      <div class="logo-icon"><i data-lucide="shield-alert"></i></div>
+      <div class="logo-text">
+        <h1>Silent SOS</h1>
+        <span class="logo-tagline">Discreet Personal Safety</span>
+      </div>
+    </div>
+
+    <!-- Active State Ribbon -->
+    <div id="global-sos-status" class="status-ribbon">
+      <span class="status-dot"></span>
+      <span class="status-text">System Monitoring Active</span>
+    </div>
+
+    <!-- View Switcher Tabs & Theme Toggle -->
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <button id="global-theme-toggle" class="theme-toggle-btn" style="background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-glass); color: var(--text-secondary); width: 38px; height: 38px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: var(--transition-smooth);" title="Toggle Light/Dark Theme">
+        <i data-lucide="sun"></i>
+      </button>
+      <nav class="global-view-nav">
+        <button class="view-tab-btn active" data-view="user-app">
+          <i data-lucide="smartphone"></i> <span>User Mobile App</span>
+        </button>
+        <button class="view-tab-btn" data-view="contact-dashboard">
+          <i data-lucide="radio"></i> <span>Contact Dashboard</span>
+          <span id="contact-alert-badge" class="alert-badge hidden">!</span>
+        </button>
+        <button class="view-tab-btn" data-view="admin-panel">
+          <i data-lucide="shield"></i> <span>Admin Panel</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="workspace-container">
+    
+    <!-- LEFT SIDEBAR: Environment Simulator Controls -->
+    <aside class="simulator-sidebar">
+      <div class="sidebar-header">
+        <i data-lucide="cpu"></i>
+        <h2>Device Simulator Controls</h2>
+      </div>
+      
+      <div class="simulator-section">
+        <h3><i data-lucide="zap"></i> Physical Buttons</h3>
+        <p class="simulator-desc">Simulate physical hardware button presses on the device.</p>
+        <div class="sim-btn-group">
+          <button id="sim-power-btn" class="sim-action-btn">
+            <span class="btn-indicator" id="power-count-indicator">0</span>
+            Power Button
+          </button>
+          <div class="volume-buttons">
+            <button id="sim-vol-up" class="sim-action-btn small"><i data-lucide="volume-2"></i> Vol Up</button>
+            <button id="sim-vol-down" class="sim-action-btn small"><i data-lucide="volume-x"></i> Vol Down</button>
+          </div>
+        </div>
+        <div class="sequence-history">
+          <span>Active Sequence:</span>
+          <span id="sim-sequence-log">None</span>
+        </div>
+      </div>
+
+      <div class="simulator-section">
+        <h3><i data-lucide="move"></i> Motion / Gesture</h3>
+        <p class="simulator-desc">Simulate kinetic sensors and movements.</p>
+        <button id="sim-shake-btn" class="sim-action-btn full-width">
+          <i data-lucide="refresh-cw"></i> Shake Device
+        </button>
+      </div>
+
+      <div class="simulator-section">
+        <h3><i data-lucide="map-pin"></i> GPS & Geolocation</h3>
+        <div class="sim-control-item">
+          <label>Simulation Route</label>
+          <select id="sim-gps-route" class="sim-select">
+            <option value="stationary">Stationary (Home)</option>
+            <option value="safe-walk">Safe Walk (Home to Work)</option>
+            <option value="deviation">Safe Walk with Route Deviation</option>
+            <option value="emergency-move">Fleeing / Moving during SOS</option>
+          </select>
+        </div>
+        <div class="sim-control-item">
+          <button id="sim-move-step" class="sim-action-btn full-width secondary">
+            <i data-lucide="chevrons-right"></i> Increment Position Step
+          </button>
+        </div>
+        <div class="gps-coordinates-display">
+          <div>Lat: <span id="sim-lat">40.7128</span></div>
+          <div>Lng: <span id="sim-lng">-74.0060</span></div>
+        </div>
+      </div>
+
+      <div class="simulator-section">
+        <h3><i data-lucide="battery"></i> Device Environment</h3>
+        <div class="sim-control-item">
+          <div class="label-row">
+            <label>Battery Level: <span id="sim-battery-pct">85%</span></label>
+          </div>
+          <input type="range" id="sim-battery-slider" min="1" max="100" value="85" class="sim-slider">
+        </div>
+        <div class="sim-control-item">
+          <label class="toggle-container">
+            <input type="checkbox" id="sim-network-status" checked>
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Internet Connection (Online)</span>
+          </label>
+        </div>
+      </div>
+      
+      <div class="simulator-section help-section">
+        <h3><i data-lucide="info"></i> Quick Test Credentials</h3>
+        <div class="credentials-box">
+          <p><strong>Lock PIN:</strong></p>
+          <ul>
+            <li>Normal Unlock: <code>1234</code></li>
+          </ul>
+          <p><strong>Admin Portal:</strong></p>
+          <ul>
+            <li>Email: <code>admin@silentsos.com</code></li>
+            <li>Password: <code>admin123</code></li>
+          </ul>
+        </div>
+      </div>
+    </aside>
+
+    <!-- RIGHT/CENTER WORKSPACE: Active View Area -->
+    <section class="viewport-canvas">
+      
+      <!-- VIEW 1: USER APP VIEW (Mobile Mockup) -->
+      <div id="view-user-app" class="role-view active">
+        <div class="phone-mockup-frame">
+          <div class="phone-bezel">
+            <!-- Dynamic Island/Notch -->
+            <div class="phone-island">
+              <div class="camera-lens"></div>
+              <div class="sensor-dot"></div>
+            </div>
+            
+            <!-- Phone Screen -->
+            <div class="phone-screen" id="phone-screen-content">
+              
+              <!-- Screen StatusBar -->
+              <div class="screen-statusbar">
+                <span class="time-display" id="phone-time">12:00 PM</span>
+                <div class="status-icons">
+                  <span id="phone-gps-indicator" class="gps-indicator hidden"><i data-lucide="map-pin"></i></span>
+                  <span id="phone-network-indicator"><i data-lucide="wifi"></i></span>
+                  <span id="phone-battery-icon"><i data-lucide="battery"></i> <span id="phone-battery-text">85%</span></span>
+                </div>
+              </div>
+
+              <!-- SCREEN CONTROLLER - DYNAMIC PAGES -->
+              <div class="screen-body" id="screen-body">
+                <!-- Pages are loaded dynamically here -->
+              </div>
+              
+              <!-- Screen Home Indicator Bar -->
+              <div class="screen-home-indicator"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 2: CONTACT DASHBOARD VIEW -->
+      <div id="view-contact-dashboard" class="role-view">
+        <div class="dashboard-panel">
+          <header class="panel-header">
+            <div class="header-main">
+              <h2>Emergency Contact Monitoring Console</h2>
+              <p>Real-time surveillance interface for authorized emergency contacts.</p>
+            </div>
+            <div id="contact-active-alert-banner" class="contact-alert-banner hidden">
+              <i data-lucide="alert-triangle" class="pulse-icon"></i>
+              <span>ACTIVE SOS ALERT RECEIVED</span>
+            </div>
+          </header>
+          
+          <div class="dashboard-layout">
+            <!-- Left panel: Map & Coordinates -->
+            <div class="dashboard-main-col">
+              <div class="dashboard-card map-card">
+                <div class="card-header">
+                  <h3><i data-lucide="map"></i> Live Tracking & Route Deviation</h3>
+                  <div class="card-actions">
+                    <span class="live-badge"><span class="pulse-dot"></span> LIVE GPS</span>
+                  </div>
+                </div>
+                <div id="contact-map" class="dashboard-map"></div>
+                <div class="map-coordinates-bar">
+                  <span>Current: <strong id="contact-curr-lat">40.7128</strong>, <strong id="contact-curr-lng">-74.0060</strong></span>
+                  <span id="contact-last-update">Last update: Just now</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right panel: Incident Stats, Audio evidence, Logs, etc. -->
+            <div class="dashboard-side-col">
+              <!-- Target User Info -->
+              <div class="dashboard-card user-info-card">
+                <div class="card-header">
+                  <h3><i data-lucide="user"></i> Target User Details</h3>
+                </div>
+                <div class="card-body">
+                  <div class="contact-user-profile">
+                    <div class="avatar-large" id="contact-view-avatar">U</div>
+                    <div class="user-profile-details">
+                      <h4 id="contact-view-name">Jane Doe</h4>
+                      <p id="contact-view-phone">+1 (555) 019-2834</p>
+                      <p id="contact-view-email">jane.doe@example.com</p>
+                    </div>
+                  </div>
+                  <div class="medical-notes-box">
+                    <p><strong>Medical Notes:</strong> <span id="contact-view-medical">Asthma, Blood Group: A+</span></p>
+                    <p><strong>Emergency Notes:</strong> <span id="contact-view-notes">Key is under the mat at front door.</span></p>
+                  </div>
+                  <div class="action-buttons-group">
+                    <a href="tel:+15550192834" id="contact-call-btn" class="action-btn tel-btn"><i data-lucide="phone"></i> Call User</a>
+                    <button id="contact-direction-btn" class="action-btn map-btn"><i data-lucide="navigation"></i> Open in Maps</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Evidence logs -->
+              <div class="dashboard-card evidence-card">
+                <div class="card-header">
+                  <h3><i data-lucide="shield-alert"></i> Collected Evidence (Active Incident)</h3>
+                </div>
+                <div class="card-body">
+                  <div class="evidence-sub-section">
+                    <h4><i data-lucide="mic"></i> Audio Recording</h4>
+                    <div id="contact-audio-section" class="empty-evidence">
+                      No active audio stream available.
+                    </div>
+                  </div>
+                  
+                  <div class="evidence-sub-section">
+                    <h4><i data-lucide="camera"></i> Camera Captures (Front/Back)</h4>
+                    <div id="contact-camera-grid" class="camera-grid">
+                      <!-- Dynamically added captured images -->
+                      <p class="empty-evidence-msg">No images captured yet.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Event Log -->
+              <div class="dashboard-card event-log-card">
+                <div class="card-header">
+                  <h3><i data-lucide="list"></i> Live Incident Log</h3>
+                </div>
+                <div class="card-body">
+                  <ul id="contact-incident-log" class="timeline-logs">
+                    <li class="empty-logs">Awaiting incident trigger...</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 3: ADMIN PANEL VIEW -->
+      <div id="view-admin-panel" class="role-view">
+        <!-- Admin Login Overlay -->
+        <div id="admin-login-overlay" class="admin-login-overlay">
+          <div class="admin-login-card">
+            <div class="admin-login-header">
+              <i data-lucide="shield-check"></i>
+              <h2>Admin Authentication</h2>
+              <p>Access reserved for Silent SOS system administrators.</p>
+            </div>
+            <form id="admin-login-form">
+              <div class="input-group">
+                <label for="admin-email">Admin Email</label>
+                <input type="email" id="admin-email" value="admin@silentsos.com" required>
+              </div>
+              <div class="input-group">
+                <label for="admin-password">Password</label>
+                <input type="password" id="admin-password" value="admin123" required>
+              </div>
+              <button type="submit" class="admin-submit-btn">Login to Command Center</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Admin Dashboard Content -->
+        <div id="admin-dashboard-content" class="admin-dashboard-content hidden">
+          <header class="panel-header">
+            <div class="header-main">
+              <h2>Command & Analytics Dashboard</h2>
+              <p>Manage users, monitor active emergencies, and review incident analytics.</p>
+            </div>
+            <button id="admin-logout-btn" class="admin-logout-btn"><i data-lucide="log-out"></i> Logout</button>
+          </header>
+
+          <!-- Analytics Tiles -->
+          <section class="admin-analytics-grid">
+            <div class="analytics-card">
+              <div class="analytics-icon blue"><i data-lucide="users"></i></div>
+              <div class="analytics-data">
+                <span class="analytics-number" id="admin-stat-users">1</span>
+                <span class="analytics-label">Registered Users</span>
+              </div>
+            </div>
+            <div class="analytics-card">
+              <div class="analytics-icon red pulse-container"><i data-lucide="alert-circle"></i></div>
+              <div class="analytics-data">
+                <span class="analytics-number" id="admin-stat-active">0</span>
+                <span class="analytics-label">Active Emergencies</span>
+              </div>
+            </div>
+            <div class="analytics-card">
+              <div class="analytics-icon orange"><i data-lucide="archive"></i></div>
+              <div class="analytics-data">
+                <span class="analytics-number" id="admin-stat-history">0</span>
+                <span class="analytics-label">Total Historical Logs</span>
+              </div>
+            </div>
+            <div class="analytics-card">
+              <div class="analytics-icon green"><i data-lucide="activity"></i></div>
+              <div class="analytics-data">
+                <span class="analytics-number" id="admin-stat-uptime">99.98%</span>
+                <span class="analytics-label">System Uptime</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- SVG Charts Panel -->
+          <section class="admin-charts-grid">
+            <div class="admin-card chart-card">
+              <div class="card-header">
+                <h3><i data-lucide="trending-up"></i> Weekly Emergency Trends</h3>
+              </div>
+              <div class="card-body chart-body" id="chart-weekly-trends">
+                <!-- SVG injected dynamically -->
+              </div>
+            </div>
+            
+            <div class="admin-card chart-card">
+              <div class="card-header">
+                <h3><i data-lucide="pie-chart"></i> Incident Category Distribution</h3>
+              </div>
+              <div class="card-body chart-body" id="chart-category-distribution">
+                <!-- SVG injected dynamically -->
+              </div>
+            </div>
+          </section>
+
+          <div class="admin-split-layout">
+            <!-- User Management -->
+            <div class="admin-card user-management-card">
+              <div class="card-header">
+                <h3><i data-lucide="users"></i> User Directory Management</h3>
+              </div>
+              <div class="card-body">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th>User</th>
+                      <th>Phone</th>
+                      <th>Status</th>
+                      <th>SOS Contacts</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="admin-user-table-body">
+                    <!-- Loaded dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Active Emergency & Incidents List -->
+            <div class="admin-card incidents-card">
+              <div class="card-header">
+                <h3><i data-lucide="shield-alert"></i> System Alerts & Incident Reports</h3>
+              </div>
+              <div class="card-body">
+                <div class="admin-incidents-list" id="admin-incidents-list">
+                  <!-- Loaded dynamically -->
+                  <div class="empty-admin-list">No recent emergency alerts reported.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- Leaflet Javascript -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Socket.io Client -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- Main Orchestrator and Router Script -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>
