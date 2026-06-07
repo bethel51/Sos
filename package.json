@@ -8,8 +8,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server.js",
+    "start": "node server.js",
     "test": "jest",
-    "db:backup": "node backend/db/backup.js"
+    "db:backup": "node backend/db/backup.js",
+    "postinstall": "npm rebuild sqlite3 --build-from-source || true"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
