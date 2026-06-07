@@ -11,7 +11,7 @@
     "start": "node server.js",
     "test": "jest",
     "db:backup": "node backend/db/backup.js",
-    "postinstall": "npm rebuild sqlite3 --build-from-source || true"
+    "postinstall": "npm rebuild sqlite3 --build-from-source || true; npm run build"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
