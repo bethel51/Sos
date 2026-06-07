@@ -22,6 +22,10 @@ const { initSocket } = require('./backend/config/socket');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust the first proxy (required for Render, Railway, Heroku, etc.)
+// This allows express-rate-limit to correctly identify client IPs
+app.set('trust proxy', 1);
+
 // Create HTTP Server for WebSockets binding
 const server = http.createServer(app);
 
