@@ -80,6 +80,7 @@ const notificationService = {
       return info;
     } catch (err) {
       console.error(`Error sending email to ${to}:`, err);
+      throw err;
     }
   },
 
