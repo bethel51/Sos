@@ -25,6 +25,13 @@ function initSocket(server) {
       console.log(`Socket ${socket.id} joined admin room.`);
     });
 
+    // Forward live audio chunks to the user's room
+    socket.on('audio_stream_chunk', (data) => {
+      if (data && data.userId && data.chunk) {
+        socket.to(data.userId).emit('live_audio_chunk', data);
+      }
+    });
+
     socket.on('disconnect', () => {
       console.log(`Socket client disconnected: ${socket.id}`);
     });

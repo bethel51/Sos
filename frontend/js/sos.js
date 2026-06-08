@@ -23,6 +23,40 @@ export class SOSManager {
     this.lastPowerTapTime = 0;
     this.volumePressHistory = [];
     this.gestureInputBuffer = [];
+
+    // Offline Sync Queue
+    this.offlineQueue = JSON.parse(localStorage.getItem('silentsos_offline_queue') || '[]');
+    window.addEventListener('online', () => this.flushOfflineQueue());
+  }
+
+  queueOfflineRequest(url, method, body) {
+    this.offlineQueue.push({ url, method, body });
+    localStorage.setItem('silentsos_offline_queue', JSON.stringify(this.offlineQueue));
+    this.app.logEvent('Offline mode: Request cached in local queue.', 'warning');
+  }
+
+  async flushOfflineQueue() {
+    if (this.offlineQueue.length === 0) return;
+    this.app.logEvent('Network restored. Synchronizing offline distress logs...', 'success');
+    this.app.showToast('Online Mode', 'Synchronizing offline cues with cloud database.', 'success');
+    
+    const queue = [...this.offlineQueue];
+    this.offlineQueue = [];
+    localStorage.setItem('silentsos_offline_queue', '[]');
+    
+    for (const req of queue) {
+      try {
+        await fetch(req.url, {
+          method: req.method,
+          headers: this.getHeaders(),
+          body: JSON.stringify(req.body)
+        });
+      } catch (err) {
+        console.error('Failed to sync offline request, re-queueing:', err);
+        this.offlineQueue.push(req);
+        localStorage.setItem('silentsos_offline_queue', JSON.stringify(this.offlineQueue));
+      }
+    }
   }
 
   getHeaders() {
@@ -79,6 +113,10 @@ export class SOSManager {
     const user = this.app.authManager.currentUser || { name: 'Jane Doe', phone: '+1 (555) 019-2834' };
     
     try {
+      if (!navigator.onLine) {
+        throw new Error('Browser is currently offline');
+      }
+      
       const response = await fetch('/api/sos/active', {
         method: 'POST',
         headers: this.getHeaders(),
@@ -95,6 +133,11 @@ export class SOSManager {
       }
     } catch (err) {
       console.error('Offline/fallback SOS session started:', err);
+      this.queueOfflineRequest('/api/sos/active', 'POST', {
+        type: emergencyType,
+        location: { lat: this.app.locationManager.lat, lng: this.app.locationManager.lng }
+      });
+      
       // Local fallback
       const dateNow = new Date();
       this.app.sosActiveIncident = {
@@ -165,6 +208,9 @@ export class SOSManager {
 
     let incidentObj = null;
     try {
+      if (!navigator.onLine) {
+        throw new Error('Browser is currently offline');
+      }
       const response = await fetch('/api/sos/deactivate', {
         method: 'POST',
         headers: this.getHeaders()
@@ -175,6 +221,7 @@ export class SOSManager {
       }
     } catch (err) {
       console.error('Error deactivating SOS on server:', err);
+      this.queueOfflineRequest('/api/sos/deactivate', 'POST', {});
     }
 
     if (!incidentObj && this.app.sosActiveIncident) {

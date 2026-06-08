@@ -49,13 +49,25 @@ export class EvidenceCollector {
         this.audioRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
             this.audioChunks.push(event.data);
+            
+            // Stream audio chunk in real-time
+            if (this.app.socket && this.app.authManager.currentUser) {
+              const reader = new FileReader();
+              reader.readAsDataURL(event.data);
+              reader.onloadend = () => {
+                const base64Chunk = reader.result;
+                this.app.socket.emit('audio_stream_chunk', {
+                  userId: this.app.authManager.currentUser.id,
+                  chunk: base64Chunk
+                });
+              };
+            }
           }
         };
 
         this.audioRecorder.onstop = async () => {
           const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
           
-          // Convert blob to base64 to send to server
           const reader = new FileReader();
           reader.readAsDataURL(audioBlob);
           reader.onloadend = async () => {
@@ -70,8 +82,9 @@ export class EvidenceCollector {
           };
         };
 
-        this.audioRecorder.start();
-        this.app.logEvent('Microphone activated. Audio recording started.', 'info');
+        // Pass 1000ms timeslice to trigger ondataavailable periodically
+        this.audioRecorder.start(1000);
+        this.app.logEvent('Microphone activated. Audio streaming started.', 'info');
       } else {
         this.startMockAudio();
       }
@@ -85,6 +98,20 @@ export class EvidenceCollector {
     this.audioRecorder = null;
     this.isAudioRecording = true;
     this.app.logEvent('Microphone permission missing. Simulating background audio capture.', 'warning');
+    
+    this.mockAudioInterval = setInterval(() => {
+      if (!this.isAudioRecording) {
+        clearInterval(this.mockAudioInterval);
+        return;
+      }
+      if (this.app.socket && this.app.authManager.currentUser) {
+        // Emit tiny valid empty WAV base64 chunk to simulate stream activity
+        this.app.socket.emit('audio_stream_chunk', {
+          userId: this.app.authManager.currentUser.id,
+          chunk: 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAAHAAEAQB8AAEAfAAABAAgAZGF0YQQAAAAAAA=='
+        });
+      }
+    }, 1000);
   }
 
   pauseAudioRecording() {
@@ -110,11 +137,15 @@ export class EvidenceCollector {
   async stopAudioRecording() {
     if (!this.isAudioRecording) return;
     
+    if (this.mockAudioInterval) {
+      clearInterval(this.mockAudioInterval);
+      this.mockAudioInterval = null;
+    }
+    
     if (this.audioRecorder && this.audioRecorder.state !== 'inactive') {
       this.audioRecorder.stop();
       this.audioRecorder.stream.getTracks().forEach(track => track.stop());
     } else {
-      // Create mock audio log entry
       this.audioUrl = 'mock_audio_stream_' + Date.now();
       if (this.app.sosActiveIncident) {
         this.app.sosActiveIncident.audioRecordingUrl = this.audioUrl;

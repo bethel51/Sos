@@ -1,0 +1,17 @@
+{
+  "short_name": "SilentSOS",
+  "name": "Silent SOS Emergency safety App",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1161/1161388.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#06060c",
+  "theme_color": "#ff2e63",
+  "display": "standalone",
+  "orientation": "portrait"
+}

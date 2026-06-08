@@ -14,6 +14,7 @@ logs/
 *.db
 *.sqlite
 *.sqlite3
+db.json
 db.json.bak
 
 # Uploads (user-generated content)

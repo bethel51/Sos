@@ -2,15 +2,15 @@
    Silent SOS - Main Web Application Orchestrator
    ========================================================================== */
 
-import { AuthManager } from './js/auth.js';
-import { ContactsManager } from './js/contacts.js';
-import { SOSManager } from './js/sos.js';
-import { LocationManager } from './js/location.js';
-import { EvidenceCollector } from './js/evidence.js';
-import { TimersManager } from './js/timers.js';
-import { HistoryManager } from './js/history.js';
-import { ContactDashboard } from './js/dashboard.js';
-import { AdminManager } from './js/admin.js';
+import { AuthManager } from './auth.js';
+import { ContactsManager } from './contacts.js';
+import { SOSManager } from './sos.js';
+import { LocationManager } from './location.js';
+import { EvidenceCollector } from './evidence.js';
+import { TimersManager } from './timers.js';
+import { HistoryManager } from './history.js';
+import { ContactDashboard } from './dashboard.js';
+import { AdminManager } from './admin.js';
 
 class AppOrchestrator {
   constructor() {
@@ -18,8 +18,8 @@ class AppOrchestrator {
     this.sosActiveIncident = null;
     
     // Core Navigation State
-    // States: 'login', 'signup', 'forgot-password', 'verify-code', 'lock-screen', 'home', 'contacts', 'timers', 'zones', 'history', 'settings', 'active-sos', 'medical-profile'
-    this.currentScreenState = 'login';
+    // States: 'login', 'signup', 'forgot-password', 'verify-code', 'reset-verify', 'reset-new-password', 'lock-screen', 'home', 'contacts', 'timers', 'zones', 'history', 'settings', 'active-sos', 'medical-profile'
+    this.currentScreenState = 'signup';
     this.lockScreenReason = 'normal-unlock'; // 'normal-unlock', 'disarm-sos', 'disarm-timer'
     
     // Sub-Systems Initializations
@@ -92,6 +92,16 @@ class AppOrchestrator {
 
   async init() {
     this.initTheme();
+
+    // Register Service Worker for PWA (Only in production/non-dev ports to avoid caching HMR scripts)
+    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    if ('serviceWorker' in navigator && !isLocal) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then(reg => console.log('ServiceWorker registered successfully:', reg.scope))
+          .catch(err => console.warn('ServiceWorker registration failed:', err));
+      });
+    }
 
     if (typeof io !== 'undefined') {
       this.socket = io();
@@ -190,6 +200,56 @@ class AppOrchestrator {
   }
 
   // --- RUNTIME VIEW SELECTOR TAB HANDLER ---
+  switchWorkspaceView(view) {
+    this.currentRoleView = view;
+    
+    // Toggle Active Tabs CSS
+    const tabs = document.querySelectorAll('.global-view-nav .view-tab-btn');
+    tabs.forEach(t => {
+      if (t.dataset.view === view) t.classList.add('active');
+      else t.classList.remove('active');
+    });
+
+    // Toggle Active Drawer Buttons CSS
+    const drawerBtns = document.querySelectorAll('.drawer-opt-btn');
+    drawerBtns.forEach(b => {
+      if (b.dataset.view === view) b.classList.add('active');
+      else b.classList.remove('active');
+    });
+    
+    // Hide all views
+    document.querySelectorAll('.role-view').forEach(rv => rv.classList.remove('active'));
+    
+    // Show selected view
+    const targetView = document.getElementById(`view-${view}`);
+    if (targetView) targetView.classList.add('active');
+    
+    // Initialize leaf maps if switching views
+    if (view === 'contact-dashboard') {
+      if (this.socket && this.sosActiveIncident) {
+        this.socket.emit('join_user_room', this.sosActiveIncident.userId);
+      } else if (this.socket && this.authManager.currentUser) {
+        this.socket.emit('join_user_room', this.authManager.currentUser.id);
+      }
+      setTimeout(() => {
+        this.locationManager.initContactMap('contact-map');
+        this.contactDashboard.update();
+      }, 100);
+    } else if (view === 'admin-panel') {
+      if (this.socket) {
+        this.socket.emit('join_admin_room');
+      }
+      this.adminManager.showDashboard();
+    } else if (view === 'user-app') {
+      // If in safe zones map tab inside user app, trigger redraw
+      if (this.currentScreenState === 'zones') {
+        setTimeout(() => {
+          this.locationManager.initUserMap('user-zones-map');
+        }, 100);
+      }
+    }
+  }
+
   bindRoleNavigation() {
     this.currentRoleView = 'user-app';
     const tabs = document.querySelectorAll('.global-view-nav .view-tab-btn');
@@ -197,42 +257,42 @@ class AppOrchestrator {
     tabs.forEach(tab => {
       tab.addEventListener('click', () => {
         const view = tab.dataset.view;
-        this.currentRoleView = view;
-        
-        // Toggle Active Tabs CSS
-        tabs.forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        
-        // Hide all views
-        document.querySelectorAll('.role-view').forEach(rv => rv.classList.remove('active'));
-        
-        // Show selected view
-        const targetView = document.getElementById(`view-${view}`);
-        if (targetView) targetView.classList.add('active');
-        
-        // Initialize leaf maps if switching views
-        if (view === 'contact-dashboard') {
-          if (this.socket && this.sosActiveIncident) {
-            this.socket.emit('join_user_room', this.sosActiveIncident.userId);
-          } else if (this.socket && this.authManager.currentUser) {
-            this.socket.emit('join_user_room', this.authManager.currentUser.id);
-          }
-          setTimeout(() => {
-            this.locationManager.initContactMap('contact-map');
-            this.contactDashboard.update();
-          }, 100);
-        } else if (view === 'admin-panel') {
-          if (this.socket) {
-            this.socket.emit('join_admin_room');
-          }
-          this.adminManager.showDashboard();
-        } else if (view === 'user-app') {
-          // If in safe zones map tab inside user app, trigger redraw
-          if (this.currentScreenState === 'zones') {
-            setTimeout(() => {
-              this.locationManager.initUserMap('user-zones-map');
-            }, 100);
-          }
+        this.switchWorkspaceView(view);
+      });
+    });
+
+    // Mobile role drawer sheet setup
+    const menuToggle = document.getElementById('mobile-menu-toggle');
+    const roleDrawer = document.getElementById('mobile-role-drawer');
+    const closeDrawer = document.getElementById('close-drawer-btn');
+    const drawerBtns = document.querySelectorAll('.drawer-opt-btn');
+
+    if (menuToggle && roleDrawer) {
+      menuToggle.addEventListener('click', () => {
+        roleDrawer.classList.remove('hidden');
+      });
+    }
+
+    if (closeDrawer && roleDrawer) {
+      closeDrawer.addEventListener('click', () => {
+        roleDrawer.classList.add('hidden');
+      });
+    }
+
+    if (roleDrawer) {
+      roleDrawer.addEventListener('click', (e) => {
+        if (e.target === roleDrawer) {
+          roleDrawer.classList.add('hidden');
+        }
+      });
+    }
+
+    drawerBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const view = btn.dataset.view;
+        this.switchWorkspaceView(view);
+        if (roleDrawer) {
+          roleDrawer.classList.add('hidden');
         }
       });
     });
@@ -268,60 +328,43 @@ class AppOrchestrator {
       this.locationManager.incrementSimulatedStep();
     });
 
-    // Battery slider
+    // Battery slider (simulator sidebar - updates battery %, triggers critical alert)
     const batterySlider = document.getElementById('sim-battery-slider');
     const batteryPct = document.getElementById('sim-battery-pct');
-    const phoneBatteryIcon = document.getElementById('phone-battery-icon');
-    const phoneBatteryText = document.getElementById('phone-battery-text');
-    
-    batterySlider.addEventListener('input', (e) => {
-      const val = e.target.value;
-      batteryPct.textContent = `${val}%`;
-      if (phoneBatteryText) phoneBatteryText.textContent = `${val}%`;
-      
-      // Update battery status bar icon color
-      if (phoneBatteryIcon) {
-        if (val <= 15) {
-          phoneBatteryIcon.style.color = 'var(--primary-red)';
-          this.checkBatteryCriticalTrigger(val);
-        } else if (val <= 30) {
-          phoneBatteryIcon.style.color = 'var(--color-orange)';
-        } else {
-          phoneBatteryIcon.style.color = 'inherit';
-        }
-      }
-    });
 
-    // Online toggle
+    if (batterySlider) {
+      batterySlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (batteryPct) batteryPct.textContent = `${val}%`;
+        // Battery critical alert trigger (still functional even without status bar icon)
+        this.checkBatteryCriticalTrigger(val);
+      });
+    }
+
+    // Online toggle (controls offline mode ribbon and SMS fallback)
     const networkToggle = document.getElementById('sim-network-status');
-    networkToggle.addEventListener('change', (e) => {
-      const isOnline = e.target.checked;
-      const ribbon = document.getElementById('global-sos-status');
-      const indicator = document.getElementById('phone-network-indicator');
-      
-      if (isOnline) {
-        indicator.innerHTML = '<i data-lucide="wifi"></i>';
-        this.logEvent('Network Connection restored (Online). Uploading queued data.', 'success');
-        this.showToast('Online Mode', 'Connection restored. Uploading cached logs.', 'success');
-        
-        // Trigger offline ribbon reset
-        if (ribbon && !this.sosManager.isActive) {
-          ribbon.className = 'status-ribbon';
-          ribbon.querySelector('.status-text').textContent = 'System Monitoring Active';
+    if (networkToggle) {
+      networkToggle.addEventListener('change', (e) => {
+        const isOnline = e.target.checked;
+        const ribbon = document.getElementById('global-sos-status');
+
+        if (isOnline) {
+          this.logEvent('Network Connection restored (Online). Uploading queued data.', 'success');
+          this.showToast('Online Mode', 'Connection restored. Uploading cached logs.', 'success');
+          if (ribbon && !this.sosManager.isActive) {
+            ribbon.className = 'status-ribbon';
+            ribbon.querySelector('.status-text').textContent = 'System Monitoring Active';
+          }
+        } else {
+          this.logEvent('Network connection lost. Offline SOS Queues active.', 'warning');
+          this.showToast('Offline Mode', 'Internet lost. Queueing distress signals to SMS fallback.', 'warning');
+          if (ribbon && !this.sosManager.isActive) {
+            ribbon.className = 'status-ribbon offline';
+            ribbon.querySelector('.status-text').textContent = 'OFFLINE: SMS Fallback Active';
+          }
         }
-      } else {
-        indicator.innerHTML = '<i data-lucide="wifi-off"></i>';
-        this.logEvent('Network connection lost. Offline SOS Queues active.', 'warning');
-        this.showToast('Offline Mode', 'Internet lost. Queueing distress signals to SMS fallback.', 'warning');
-        
-        // Set offline status ribbon
-        if (ribbon && !this.sosManager.isActive) {
-          ribbon.className = 'status-ribbon offline';
-          ribbon.querySelector('.status-text').textContent = 'OFFLINE: SMS Fallback Active';
-        }
-      }
-      lucide.createIcons();
-    });
+      });
+    }
   }
 
   checkBatteryCriticalTrigger(val) {
@@ -396,8 +439,17 @@ class AppOrchestrator {
     // Check user suspension state
     if (this.authManager.currentUser && this.authManager.currentUser.status === 'suspended') {
       this.authManager.logout();
-      this.currentScreenState = 'login';
+      this.currentScreenState = 'signup';
       this.showToast('Account Suspended', 'Your account has been suspended by an administrator.', 'error');
+    }
+
+    // Proper gating and roles redirect:
+    const publicScreens = ['login', 'signup', 'forgot-password', 'verify-code', 'reset-verify', 'reset-new-password'];
+    if (!publicScreens.includes(this.currentScreenState) && !this.authManager.currentUser) {
+      this.currentScreenState = 'signup';
+      this.showToast('Authentication Required', 'Please create an account or login to proceed.', 'warning');
+      this.renderActivePage();
+      return;
     }
 
     switch (this.currentScreenState) {
@@ -412,6 +464,12 @@ class AppOrchestrator {
         break;
       case 'verify-code':
         html = this.getVerifyCodeHtml();
+        break;
+      case 'reset-verify':
+        html = this.getResetVerifyHtml();
+        break;
+      case 'reset-new-password':
+        html = this.getResetNewPasswordHtml();
         break;
       case 'lock-screen':
         html = this.getLockScreenHtml();
@@ -461,7 +519,7 @@ class AppOrchestrator {
     const oldNavbar = screen.querySelector('.phone-navbar');
     if (oldNavbar) oldNavbar.remove();
 
-    const noNavStates = ['login', 'signup', 'forgot-password', 'verify-code', 'lock-screen', 'active-sos', 'medical-profile'];
+    const noNavStates = ['login', 'signup', 'forgot-password', 'verify-code', 'reset-verify', 'reset-new-password', 'lock-screen', 'active-sos', 'medical-profile'];
     if (noNavStates.includes(this.currentScreenState)) return;
 
     const nav = document.createElement('div');
@@ -503,25 +561,39 @@ class AppOrchestrator {
 
   getLoginHtml() {
     return `
-      <div class="screen-header">
-        <h2>Welcome Back</h2>
-        <p>Login to secure your device monitoring</p>
-      </div>
-      <div class="auth-container">
-        <form id="user-login-form" style="display:flex; flex-direction:column; gap:12px;">
-          <div class="form-group">
-            <label>Email Address</label>
-            <input type="email" id="login-email" value="jane.doe@example.com" required autocomplete="username">
+      <div class="auth-page-wrapper">
+        <div class="auth-brand-header">
+          <div class="auth-brand-icon">
+            <i data-lucide="shield-check"></i>
           </div>
-          <div class="form-group">
-            <label>Password</label>
-            <input type="password" id="login-password" value="Password123!" required autocomplete="current-password">
+          <h1 class="auth-brand-title">Silent SOS</h1>
+          <p class="auth-brand-sub">Your personal safety guardian</p>
+        </div>
+
+        <div class="auth-glass-card">
+          <h2 class="auth-card-title">Welcome Back</h2>
+          <p class="auth-card-sub">Sign in to continue protecting yourself</p>
+
+          <form id="user-login-form" class="auth-form">
+            <div class="auth-field">
+              <div class="auth-field-icon"><i data-lucide="mail"></i></div>
+              <input type="email" id="login-email" value="jane.doe@example.com" placeholder="Email address" required autocomplete="username">
+            </div>
+            <div class="auth-field">
+              <div class="auth-field-icon"><i data-lucide="lock"></i></div>
+              <input type="password" id="login-password" value="Password123!" placeholder="Password" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="auth-submit-btn">
+              <i data-lucide="log-in"></i>
+              Sign In
+            </button>
+          </form>
+
+          <div class="auth-card-links">
+            <a href="#" id="link-forgot-pass" class="auth-link">Forgot Password?</a>
+            <span class="auth-divider">·</span>
+            <a href="#" id="link-signup" class="auth-link auth-link-accent">Create Account</a>
           </div>
-          <button type="submit" class="btn-primary" style="margin-top:10px;">Sign In</button>
-        </form>
-        <div class="auth-links">
-          <p><a href="#" id="link-forgot-pass">Forgot Password?</a></p>
-          <p style="margin-top:6px;">Don't have an account? <a href="#" id="link-signup">Sign Up</a></p>
         </div>
       </div>
     `;
@@ -529,37 +601,76 @@ class AppOrchestrator {
 
   getSignupHtml() {
     return `
-      <div class="screen-header">
-        <h2>Register</h2>
-        <p>Create your safety account</p>
-      </div>
-      <div class="auth-container">
-        <form id="user-signup-form" style="display:flex; flex-direction:column; gap:10px; max-height: 480px; overflow-y: auto; padding-right:4px;">
-          <div class="form-group">
-            <label>Full Name</label>
-            <input type="text" id="reg-name" placeholder="Jane Doe" required autocomplete="name">
+      <div class="auth-page-wrapper premium-signup-view">
+        <div class="auth-brand-header">
+          <div class="auth-brand-icon premium-glow-blue">
+            <i data-lucide="shield-plus"></i>
           </div>
-          <div class="form-group">
-            <label>Email</label>
-            <input type="email" id="reg-email" placeholder="jane@example.com" required autocomplete="email">
+          <h1 class="auth-brand-title">Create Account</h1>
+          <p class="auth-brand-sub">Secure your personal safety network today</p>
+        </div>
+
+        <div class="auth-glass-card premium-signup-card">
+          <div class="auth-steps-indicator premium-steps">
+            <div class="auth-step active"><span class="step-num">1</span> <span class="step-lbl">Details</span></div>
+            <div class="auth-step-line active"></div>
+            <div class="auth-step"><span class="step-num">2</span> <span class="step-lbl">Verify</span></div>
+            <div class="auth-step-line"></div>
+            <div class="auth-step"><span class="step-num">3</span> <span class="step-lbl">Done</span></div>
           </div>
-          <div class="form-group">
-            <label>Phone Number</label>
-            <input type="tel" id="reg-phone" placeholder="+1 (555) 000-0000" required autocomplete="tel">
+
+          <form id="user-signup-form" class="auth-form premium-form" style="max-height: 380px; overflow-y: auto; padding-right: 4px;">
+            <div class="premium-input-group">
+              <label class="premium-input-label">Full Name</label>
+              <div class="auth-field premium-field">
+                <div class="auth-field-icon"><i data-lucide="user"></i></div>
+                <input type="text" id="reg-name" placeholder="John Doe" required autocomplete="name">
+              </div>
+            </div>
+
+            <div class="premium-input-group">
+              <label class="premium-input-label">Email Address</label>
+              <div class="auth-field premium-field">
+                <div class="auth-field-icon"><i data-lucide="mail"></i></div>
+                <input type="email" id="reg-email" placeholder="john@example.com" required autocomplete="email">
+              </div>
+            </div>
+
+            <div class="premium-input-group">
+              <label class="premium-input-label">Phone Number</label>
+              <div class="auth-field premium-field">
+                <div class="auth-field-icon"><i data-lucide="phone"></i></div>
+                <input type="tel" id="reg-phone" placeholder="+1 (555) 000-0000" required autocomplete="tel">
+              </div>
+            </div>
+
+            <div class="premium-input-group">
+              <label class="premium-input-label">Security Password</label>
+              <div class="auth-field premium-field">
+                <div class="auth-field-icon"><i data-lucide="lock"></i></div>
+                <input type="password" id="reg-password" placeholder="Min. 8 chars, mixed case, symbol" required autocomplete="new-password">
+              </div>
+            </div>
+
+            <div class="premium-input-group">
+              <label class="premium-input-label">4-Digit Unlock PIN</label>
+              <div class="auth-field premium-field">
+                <div class="auth-field-icon"><i data-lucide="key-round"></i></div>
+                <input type="text" id="reg-pin" placeholder="e.g. 1234" maxlength="4" pattern="[0-9]{4}" required>
+              </div>
+              <span class="field-hint-text">Used to cancel active SOS alarms safely</span>
+            </div>
+
+            <button type="submit" class="auth-submit-btn premium-submit-btn" style="margin-top: 10px;">
+              <span>Continue to Verification</span>
+              <i data-lucide="arrow-right"></i>
+            </button>
+          </form>
+
+          <div class="auth-card-links premium-links">
+            <span style="font-size: 11px; color: var(--text-muted);">Already registered?</span>
+            <a href="#" id="link-login" class="auth-link auth-link-accent">Sign In</a>
           </div>
-          <div class="form-group">
-            <label>Password</label>
-            <input type="password" id="reg-password" placeholder="Min 8 chars, A-Z, 0-9" required autocomplete="new-password">
-            <span style="font-size:9px; color:var(--text-muted);">Must include uppercase, lowercase, digit, & special character.</span>
-          </div>
-          <div class="form-group">
-            <label>Unlocking PIN (4 digits)</label>
-            <input type="text" id="reg-pin" placeholder="1234" maxlength="4" pattern="[0-9]{4}" required>
-          </div>
-          <button type="submit" class="btn-primary" style="margin-top:10px;">Next: Verify</button>
-        </form>
-        <div class="auth-links">
-          <p>Already registered? <a href="#" id="link-login">Login</a></p>
         </div>
       </div>
     `;
@@ -567,20 +678,30 @@ class AppOrchestrator {
 
   getForgotPasswordHtml() {
     return `
-      <div class="screen-header">
-        <h2>Reset Password</h2>
-        <p>Provide your registered email address</p>
-      </div>
-      <div class="auth-container">
-        <form id="forgot-form" style="display:flex; flex-direction:column; gap:12px;">
-          <div class="form-group">
-            <label>Email Address</label>
-            <input type="email" id="forgot-email" required autocomplete="email">
+      <div class="auth-page-wrapper">
+        <div class="auth-brand-header">
+          <div class="auth-brand-icon" style="background: linear-gradient(135deg, #f7971e, #ffd200);">
+            <i data-lucide="key"></i>
           </div>
-          <button type="submit" class="btn-primary" style="margin-top:10px;">Send Reset Link</button>
-        </form>
-        <div class="auth-links">
-          <p><a href="#" id="link-login-back">Back to Login</a></p>
+          <h1 class="auth-brand-title">Reset Password</h1>
+          <p class="auth-brand-sub">We'll send you a recovery code</p>
+        </div>
+
+        <div class="auth-glass-card">
+          <form id="forgot-form" class="auth-form">
+            <div class="auth-field">
+              <div class="auth-field-icon"><i data-lucide="mail"></i></div>
+              <input type="email" id="forgot-email" placeholder="Registered email" required autocomplete="email">
+            </div>
+            <button type="submit" class="auth-submit-btn">
+              <i data-lucide="send"></i>
+              Send Reset Code
+            </button>
+          </form>
+
+          <div class="auth-card-links">
+            <a href="#" id="link-login-back" class="auth-link"><i data-lucide="chevron-left" style="width:12px;height:12px;"></i> Back to Login</a>
+          </div>
         </div>
       </div>
     `;
@@ -588,21 +709,136 @@ class AppOrchestrator {
 
   getVerifyCodeHtml() {
     return `
-      <div class="screen-header">
-        <h2>Verification</h2>
-        <p>We sent a 4-digit code to your contacts</p>
-      </div>
-      <div class="auth-container" style="text-align:center;">
-        <p style="font-size:12px; margin-bottom:15px; color:var(--text-secondary);">Enter the verification code to complete sign up.</p>
-        <div class="verification-boxes" style="margin-bottom:20px;">
-          <input type="text" class="code-input" maxlength="1" pattern="[0-9]" required>
-          <input type="text" class="code-input" maxlength="1" pattern="[0-9]" required>
-          <input type="text" class="code-input" maxlength="1" pattern="[0-9]" required>
-          <input type="text" class="code-input" maxlength="1" pattern="[0-9]" required>
+      <div class="auth-page-wrapper premium-verify-view">
+        <div class="auth-brand-header">
+          <div class="auth-brand-icon otp-icon-glow premium-glow-purple">
+            <i data-lucide="shield-check"></i>
+          </div>
+          <h1 class="auth-brand-title">Verify Email</h1>
+          <p class="auth-brand-sub">Verify your account to activate distress features</p>
         </div>
-        <button id="verify-submit-btn" class="btn-primary" style="width:100%;">Verify & Setup</button>
-        <div class="auth-links">
-          <p><a href="#" id="resend-code-btn">Resend Verification Code</a></p>
+
+        <div class="auth-glass-card premium-verify-card">
+          <div class="auth-steps-indicator premium-steps">
+            <div class="auth-step completed"><span class="step-num"><i data-lucide="check" style="width: 10px; height: 10px;"></i></span> <span class="step-lbl">Details</span></div>
+            <div class="auth-step-line active"></div>
+            <div class="auth-step active"><span class="step-num">2</span> <span class="step-lbl">Verify</span></div>
+            <div class="auth-step-line active"></div>
+            <div class="auth-step"><span class="step-num">3</span> <span class="step-lbl">Done</span></div>
+          </div>
+
+          <div class="verify-instruction-box">
+            <p class="otp-hint-text">We sent a 4-digit security code to <strong style="color:var(--color-cyan);">${this.currentSignupEmail ? this.currentSignupEmail.replace(/(.{2}).+(@.+)/, '$1****$2') : 'your email'}</strong>. Enter it below to authorize this device.</p>
+          </div>
+
+          <div class="otp-input-row premium-otp-row">
+            <input type="text" class="code-input otp-digit premium-otp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" required>
+            <input type="text" class="code-input otp-digit premium-otp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" required>
+            <input type="text" class="code-input otp-digit premium-otp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" required>
+            <input type="text" class="code-input otp-digit premium-otp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" required>
+          </div>
+
+          <button id="verify-submit-btn" class="auth-submit-btn premium-verify-btn" style="margin-top: 24px;">
+            <i data-lucide="key-round"></i>
+            <span>Verify &amp; Activate Device</span>
+          </button>
+
+          <div class="auth-card-links premium-links" style="flex-direction: column; gap: 8px; margin-top: 18px;">
+            <a href="#" id="resend-code-btn" class="auth-link">Didn't receive code? <strong>Resend Email</strong></a>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  getResetVerifyHtml() {
+    const email = this.tempResetEmail || '';
+    const maskedEmail = email.replace(/(.{2}).+(@.+)/, '$1****$2');
+    return `
+      <div class="auth-page-wrapper">
+        <div class="auth-brand-header">
+          <div class="auth-brand-icon otp-icon-glow" style="background: linear-gradient(135deg, #f7971e, #ffd200);">
+            <i data-lucide="key-round"></i>
+          </div>
+          <h1 class="auth-brand-title">Enter Reset Code</h1>
+          <p class="auth-brand-sub">We sent a 4-digit code to ${maskedEmail}</p>
+        </div>
+
+        <div class="auth-glass-card">
+          <div class="auth-steps-indicator">
+            <div class="auth-step completed"><i data-lucide="check" style="width:10px;height:10px;"></i> Email</div>
+            <div class="auth-step-line active"></div>
+            <div class="auth-step active"><span>2</span> Verify</div>
+            <div class="auth-step-line"></div>
+            <div class="auth-step"><span>3</span> New Pass</div>
+          </div>
+
+          <p class="otp-hint-text">Check your inbox for the 4-digit reset code. It expires in 10 minutes.<br>
+          <span style="color:var(--color-green); font-weight:600;">Dev tip:</span> Check the server console/terminal for the code.</p>
+
+          <div class="otp-input-row">
+            <input type="text" class="code-input otp-digit reset-otp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" required>
+            <input type="text" class="code-input otp-digit reset-otp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" required>
+            <input type="text" class="code-input otp-digit reset-otp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" required>
+            <input type="text" class="code-input otp-digit reset-otp-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" required>
+          </div>
+
+          <button id="reset-verify-btn" class="auth-submit-btn" style="margin-top:16px; background: linear-gradient(135deg, #f7971e, #e05c00);">
+            <i data-lucide="arrow-right"></i>
+            Continue
+          </button>
+
+          <div class="auth-card-links" style="flex-direction: column; gap: 6px;">
+            <a href="#" id="resend-reset-btn" class="auth-link">Didn't receive a code? <strong>Resend</strong></a>
+            <a href="#" id="back-to-forgot-btn" class="auth-link" style="font-size:11px; color:var(--text-muted);">
+              <i data-lucide="chevron-left" style="width:11px;height:11px;"></i> Back
+            </a>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  getResetNewPasswordHtml() {
+    return `
+      <div class="auth-page-wrapper">
+        <div class="auth-brand-header">
+          <div class="auth-brand-icon" style="background: linear-gradient(135deg, #00c6ff, #0072ff);">
+            <i data-lucide="lock-keyhole"></i>
+          </div>
+          <h1 class="auth-brand-title">New Password</h1>
+          <p class="auth-brand-sub">Create a strong, secure password</p>
+        </div>
+
+        <div class="auth-glass-card">
+          <div class="auth-steps-indicator">
+            <div class="auth-step completed"><i data-lucide="check" style="width:10px;height:10px;"></i> Email</div>
+            <div class="auth-step-line active"></div>
+            <div class="auth-step completed"><i data-lucide="check" style="width:10px;height:10px;"></i> Verify</div>
+            <div class="auth-step-line active"></div>
+            <div class="auth-step active"><span>3</span> New Pass</div>
+          </div>
+
+          <form id="reset-new-pass-form" class="auth-form">
+            <div class="auth-field">
+              <div class="auth-field-icon"><i data-lucide="lock"></i></div>
+              <input type="password" id="reset-new-pass" placeholder="New password" required autocomplete="new-password">
+            </div>
+            <div class="auth-field">
+              <div class="auth-field-icon"><i data-lucide="lock-keyhole"></i></div>
+              <input type="password" id="reset-confirm-pass" placeholder="Confirm new password" required autocomplete="new-password">
+            </div>
+
+            <div id="reset-pass-strength" class="pass-strength-hints" style="display:none;"></div>
+
+            <button type="submit" class="auth-submit-btn" style="background: linear-gradient(135deg, #00c6ff, #0072ff);">
+              <i data-lucide="check-circle"></i>
+              Set New Password
+            </button>
+          </form>
+
+          <div class="auth-card-links">
+            <span style="font-size:10px; color:var(--text-muted);">Must include uppercase, lowercase, digit &amp; symbol</span>
+          </div>
         </div>
       </div>
     `;
@@ -857,11 +1093,19 @@ class AppOrchestrator {
   getZonesHtml() {
     const zones = this.locationManager.safetyZones;
     return `
-      <div class="screen-header" style="margin-bottom:10px;">
+      <div class="screen-header" style="margin-bottom: 8px;">
         <h2>Safety Zones & Services</h2>
-        <p>Track your locations & nearby assets</p>
+        <p>Search addresses, tap map to place safe zones</p>
       </div>
       
+      <!-- Geocoding Location Search Bar -->
+      <div class="map-search-bar" style="display: flex; gap: 6px; margin-bottom: 8px;">
+        <input type="text" id="map-search-input" placeholder="Search address/landmark..." style="flex: 1; padding: 8px 10px; font-size: 12px; border: 1px solid var(--border-glass); border-radius: 8px; background: rgba(0,0,0,0.25); color: white; outline: none;">
+        <button id="map-search-btn" class="btn-primary" style="padding: 0 12px; font-size: 12px; display: flex; align-items: center; justify-content: center; width: auto; margin: 0;" title="Search Location">
+          <i data-lucide="search" style="width: 14px; height: 14px;"></i>
+        </button>
+      </div>
+
       <div id="user-zones-map" style="height:170px; border-radius:12px; border:1px solid var(--border-glass); margin-bottom:10px; overflow:hidden;"></div>
       
       <div class="map-assistance-controls" style="border-radius:10px; margin-bottom:15px;">
@@ -873,7 +1117,8 @@ class AppOrchestrator {
       </div>
 
       <div style="background:rgba(0,0,0,0.2); border:1px solid var(--border-glass); border-radius:10px; padding:10px; margin-bottom:15px;">
-        <h3 style="font-size:12px; color:var(--accent-blue); margin-bottom:6px;">Create Safe Zone (at current GPS)</h3>
+        <h3 style="font-size:12px; color:var(--accent-blue); margin-bottom:2px;">Create Safe Zone</h3>
+        <span id="selected-location-label" style="font-size: 9px; color: var(--text-muted); display: block; margin-bottom: 6px;">Target: Current Device GPS</span>
         <form id="add-zone-form" style="display:flex; gap:6px;">
           <input type="text" id="zone-name" placeholder="Zone name (e.g. Home)" required style="font-size:11px; padding:6px; flex:1; background:rgba(0,0,0,0.2); border:1px solid var(--border-glass); border-radius:6px; color:white;">
           <input type="number" id="zone-radius" placeholder="Radius (m)" value="100" required style="font-size:11px; padding:6px; width:70px; background:rgba(0,0,0,0.2); border:1px solid var(--border-glass); border-radius:6px; color:white;">
@@ -904,9 +1149,14 @@ class AppOrchestrator {
     const list = this.historyManager.getIncidents();
     
     return `
-      <div class="screen-header">
-        <h2>Incident Logs</h2>
-        <p>Past emergency alerts and evidence folders</p>
+      <div class="screen-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+        <div>
+          <h2>Incident Logs</h2>
+          <p>Past emergency alerts and evidence folders</p>
+        </div>
+        <button id="btn-add-mock-log" class="btn-primary" style="font-size:11px; padding:6px 10px; border-radius:8px; display:flex; align-items:center; gap:4px; width: auto; margin: 0;">
+          <i data-lucide="plus-circle" style="width:12px; height:12px;"></i> Add Log
+        </button>
       </div>
       
       <div class="history-list" style="margin-bottom:60px;">
@@ -927,9 +1177,14 @@ class AppOrchestrator {
                 <span><i data-lucide="mic" style="width:10px; vertical-align:middle;"></i> ${inc.audioRecordingUrl ? 'Audio Log' : 'No Audio'}</span>
               </div>
             </div>
-            <button class="history-item-replay-btn" data-incid="${inc.id}">
-              <i data-lucide="play" style="width:10px; vertical-align:middle;"></i> Replay Incident Evidence
-            </button>
+            <div style="display:flex; gap:8px; margin-top:10px;">
+              <button class="history-item-replay-btn" data-incid="${inc.id}" style="flex: 1; padding: 6px 12px; font-size: 11px;">
+                <i data-lucide="play" style="width:10px; vertical-align:middle;"></i> Replay
+              </button>
+              <button class="history-item-delete-btn" data-incid="${inc.id}" style="background:rgba(255, 46, 99, 0.1); border:1px solid rgba(255,46,99,0.25); color:var(--primary-red); border-radius:8px; padding:6px 12px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:var(--transition-smooth);" title="Delete Log">
+                <i data-lucide="trash-2" style="width:14px; height:14px;"></i>
+              </button>
+            </div>
           </div>
         `).join('')}
       </div>
@@ -1192,7 +1447,7 @@ class AppOrchestrator {
       if (signupForm) {
         signupForm.addEventListener('submit', (e) => {
           e.preventDefault();
-            const name = document.getElementById('reg-name').value;
+          const name = document.getElementById('reg-name').value;
           const email = document.getElementById('reg-email').value;
           const phone = document.getElementById('reg-phone').value;
           const password = document.getElementById('reg-password').value;
@@ -1204,16 +1459,20 @@ class AppOrchestrator {
             return;
           }
 
-          // Save temporary signup data to instantiate during verification
+          // Save temporary signup data to instantiate during resend
           this.tempSignupData = { name, email, phone, password, pin };
           
-          // Trigger email verification mock code
-          this.mockVerificationCode = Math.floor(1000 + Math.random() * 9000).toString();
-          this.logEvent(`Signup verification code sent to ${email}: ${this.mockVerificationCode}`, 'info');
-          this.showToast('Verification Code Sent', `Mock Code: ${this.mockVerificationCode} (Check dev-console/logs)`, 'info');
-          
-          this.currentScreenState = 'verify-code';
-          this.renderActivePage();
+          this.showToast('Sending OTP', 'Dispatching verification email...', 'info');
+          this.authManager.sendOTP(this.tempSignupData)
+            .then(() => {
+              this.currentSignupEmail = email;
+              this.showToast('Code Sent', `A verification code was sent to ${email}`, 'success');
+              this.currentScreenState = 'verify-code';
+              this.renderActivePage();
+            })
+            .catch(err => {
+              this.showToast('Signup Error', err.message, 'error');
+            });
         });
       }
 
@@ -1230,32 +1489,26 @@ class AppOrchestrator {
       if (forgotForm) {
         forgotForm.addEventListener('submit', async (e) => {
           e.preventDefault();
-          const email = document.getElementById('forgot-email').value;
-          
+          const email = document.getElementById('forgot-email').value.trim();
+          if (!email) return;
+
           try {
-            // Generate mock reset code
-            const mockCode = Math.floor(1000 + Math.random() * 9000).toString();
-            this.logEvent(`Password reset OTP code sent to ${email}: ${mockCode}`, 'info');
-            this.showToast('Reset OTP Sent', `Mock Code: ${mockCode}`, 'info');
-            
+            const submitBtn = forgotForm.querySelector('button[type="submit"]');
+            if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Sending...'; }
+
+            await this.authManager.forgotPassword(email);
+
+            // Store email for subsequent screens
             this.tempResetEmail = email;
-            this.tempResetOtp = mockCode;
-            
-            // Prompt password entry
-            const newPass = prompt("Enter new secure password (min 8 chars, mixed case):");
-            if (newPass) {
-              const otpCheck = prompt(`Enter the 4-digit code sent to ${email}:`);
-              if (otpCheck === mockCode) {
-                await this.authManager.resetPassword(email, newPass);
-                this.showToast('Success', 'Password has been updated. Please login.', 'success');
-                this.currentScreenState = 'login';
-              } else {
-                alert("Incorrect verification code.");
-              }
-            }
+            this.tempResetOtp = null;
+
+            this.showToast('Code Sent', 'Check your email or server console for the 4-digit code.', 'success');
+            this.currentScreenState = 'reset-verify';
             this.renderActivePage();
           } catch (err) {
-            this.showToast('Error', err.message, 'error');
+            this.showToast('Error', err.message || 'Reset request failed.', 'error');
+            const submitBtn = forgotForm.querySelector('button[type="submit"]');
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i data-lucide="send"></i> Send Reset Code'; lucide.createIcons(); }
           }
         });
       }
@@ -1269,13 +1522,37 @@ class AppOrchestrator {
 
     // 4. VERIFY CODE
     if (this.currentScreenState === 'verify-code') {
-      const codeInputs = document.querySelectorAll('.code-input');
+      // FIX: scope to .otp-digit only — avoids picking up .reset-otp-digit inputs
+      const codeInputs = document.querySelectorAll('.otp-digit');
+
+      // Auto-focus the first input
+      setTimeout(() => codeInputs[0]?.focus(), 100);
       
-      // Auto focus jumping helper
+      // Auto focus jumping helper with filled class and backspace support
       codeInputs.forEach((input, index) => {
-        input.addEventListener('keyup', (e) => {
-          if (e.target.value.length >= 1 && index < codeInputs.length - 1) {
-            codeInputs[index + 1].focus();
+        input.addEventListener('input', (e) => {
+          // Only allow digits
+          e.target.value = e.target.value.replace(/[^0-9]/g, '');
+          if (e.target.value) {
+            e.target.classList.add('filled');
+            if (index < codeInputs.length - 1) {
+              codeInputs[index + 1].focus();
+            }
+            // FIX: defer auto-submit by 50ms so all input events settle (prevents paste race condition)
+            const allFilled = Array.from(codeInputs).every(i => i.value.length === 1);
+            if (allFilled) {
+              setTimeout(() => document.getElementById('verify-submit-btn')?.click(), 50);
+            }
+          } else {
+            e.target.classList.remove('filled');
+          }
+        });
+
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Backspace' && !e.target.value && index > 0) {
+            codeInputs[index - 1].focus();
+            codeInputs[index - 1].value = '';
+            codeInputs[index - 1].classList.remove('filled');
           }
         });
       });
@@ -1283,31 +1560,226 @@ class AppOrchestrator {
       document.getElementById('verify-submit-btn')?.addEventListener('click', async () => {
         const codeInputted = Array.from(codeInputs).map(i => i.value).join('');
         
-        if (codeInputted === this.mockVerificationCode) {
-          try {
-            const user = await this.authManager.signUp(this.tempSignupData);
-            this.initUserSession(user);
-            
+        // FIX: disable button & show spinner to prevent duplicate submissions
+        const verifyBtn = document.getElementById('verify-submit-btn');
+        if (verifyBtn) {
+          verifyBtn.disabled = true;
+          verifyBtn.innerHTML = `<i data-lucide="loader-2" style="width:16px;height:16px;animation:spin 1s linear infinite;"></i><span>Verifying...</span>`;
+          if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+        try {
+          const user = await this.authManager.verifyAndSignUp(this.currentSignupEmail, codeInputted);
+          this.initUserSession(user);
+          
+          // Show verification success message overlay inside phone screen
+          const screen = document.getElementById('phone-screen-content');
+          const successOverlay = document.createElement('div');
+          successOverlay.className = 'verification-success-overlay';
+          successOverlay.innerHTML = `
+            <div class="success-content-card">
+              <div class="success-checkmark-circle">
+                <i data-lucide="check-circle-2" style="width: 48px; height: 48px; color: var(--color-green);"></i>
+              </div>
+              <h3>Verification Successful</h3>
+              <p>Your account is now fully secured. Redirecting to your personal dashboard...</p>
+            </div>
+          `;
+          if (screen) screen.appendChild(successOverlay);
+          if (typeof lucide !== 'undefined') lucide.createIcons();
+
+          this.tempSignupData = null;
+          this.currentSignupEmail = null;
+
+          // Redirect directly to dashboard after 2 seconds
+          setTimeout(() => {
+            if (successOverlay.parentNode) successOverlay.remove();
             this.currentScreenState = 'home';
-            this.showToast('Account Created', 'Registration and verification complete!', 'success');
+            this.showToast('Welcome', `Account verified successfully!`, 'success');
             this.renderActivePage();
-            
-            this.tempSignupData = null;
-            this.mockVerificationCode = null;
-          } catch (err) {
-            this.showToast('Registration Error', err.message, 'error');
+          }, 2000);
+        } catch (err) {
+          // Re-enable button so user can try again
+          if (verifyBtn) {
+            verifyBtn.disabled = false;
+            verifyBtn.innerHTML = `<i data-lucide="key-round"></i><span>Verify &amp; Activate Device</span>`;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
           }
-        } else {
-          this.showToast('Verification Failed', 'Incorrect 4-digit code. Please check logs/toasts.', 'error');
+          this.showToast('Verification Failed', err.message || 'Incorrect code. Please try again.', 'error');
         }
       });
 
       document.getElementById('resend-code-btn')?.addEventListener('click', (e) => {
         e.preventDefault();
-        this.mockVerificationCode = Math.floor(1000 + Math.random() * 9000).toString();
-        this.logEvent(`Resent Verification code: ${this.mockVerificationCode}`, 'info');
-        this.showToast('Code Resent', `Mock Code: ${this.mockVerificationCode}`, 'info');
+        if (this.tempSignupData) {
+          this.showToast('Resending OTP', 'Requesting new verification code...', 'info');
+          this.authManager.sendOTP(this.tempSignupData)
+            .then(() => {
+              this.showToast('Code Resent', 'A new verification code was sent to your email.', 'success');
+            })
+            .catch(err => {
+              this.showToast('Error', err.message, 'error');
+            });
+        } else {
+          this.showToast('Error', 'Session expired. Please register again.', 'error');
+          this.currentScreenState = 'signup';
+          this.renderActivePage();
+        }
       });
+    }
+
+    // 3b. RESET VERIFY (OTP entry for password reset)
+    if (this.currentScreenState === 'reset-verify') {
+      const resetDigits = document.querySelectorAll('.reset-otp-digit');
+
+      // Auto-focus first digit
+      setTimeout(() => resetDigits[0]?.focus(), 100);
+
+      resetDigits.forEach((input, index) => {
+        input.addEventListener('input', (e) => {
+          e.target.value = e.target.value.replace(/[^0-9]/g, '');
+          if (e.target.value) {
+            e.target.classList.add('filled');
+            if (index < resetDigits.length - 1) {
+              resetDigits[index + 1].focus();
+            }
+            // Auto-trigger continue when all 4 filled
+            const allFilled = Array.from(resetDigits).every(i => i.value.length === 1);
+            if (allFilled) {
+              document.getElementById('reset-verify-btn')?.click();
+            }
+          } else {
+            e.target.classList.remove('filled');
+          }
+        });
+
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Backspace' && !e.target.value && index > 0) {
+            resetDigits[index - 1].focus();
+            resetDigits[index - 1].value = '';
+            resetDigits[index - 1].classList.remove('filled');
+          }
+        });
+      });
+
+      document.getElementById('reset-verify-btn')?.addEventListener('click', () => {
+        const code = Array.from(resetDigits).map(i => i.value).join('');
+        if (code.length !== 4) {
+          this.showToast('Incomplete Code', 'Please enter all 4 digits.', 'error');
+          return;
+        }
+        // Store code for the next screen to use
+        this.tempResetOtp = code;
+        this.currentScreenState = 'reset-new-password';
+        this.renderActivePage();
+      });
+
+      document.getElementById('resend-reset-btn')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        if (!this.tempResetEmail) {
+          this.currentScreenState = 'forgot-password';
+          this.renderActivePage();
+          return;
+        }
+        try {
+          await this.authManager.forgotPassword(this.tempResetEmail);
+          this.showToast('Code Resent', 'A new reset code has been sent.', 'success');
+          // Clear existing inputs
+          resetDigits.forEach(d => { d.value = ''; d.classList.remove('filled'); });
+          resetDigits[0]?.focus();
+        } catch (err) {
+          this.showToast('Error', err.message, 'error');
+        }
+      });
+
+      document.getElementById('back-to-forgot-btn')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.currentScreenState = 'forgot-password';
+        this.renderActivePage();
+      });
+    }
+
+    // 3c. RESET NEW PASSWORD (set new password after OTP verified)
+    if (this.currentScreenState === 'reset-new-password') {
+      const form = document.getElementById('reset-new-pass-form');
+      const newPassInput = document.getElementById('reset-new-pass');
+      const confirmInput = document.getElementById('reset-confirm-pass');
+      const strengthHints = document.getElementById('reset-pass-strength');
+
+      // Live strength indicator
+      newPassInput?.addEventListener('input', () => {
+        const val = newPassInput.value;
+        const checks = [
+          { label: '8+ characters', ok: val.length >= 8 },
+          { label: 'Uppercase letter', ok: /[A-Z]/.test(val) },
+          { label: 'Lowercase letter', ok: /[a-z]/.test(val) },
+          { label: 'A digit', ok: /[0-9]/.test(val) },
+          { label: 'A special character', ok: /[^A-Za-z0-9]/.test(val) }
+        ];
+        const allPassed = checks.every(c => c.ok);
+        if (strengthHints) {
+          strengthHints.style.display = 'block';
+          strengthHints.innerHTML = checks.map(c => `
+            <span class="strength-item ${c.ok ? 'ok' : 'fail'}">
+              <i data-lucide="${c.ok ? 'check-circle' : 'x-circle'}" style="width:11px;height:11px;"></i>
+              ${c.label}
+            </span>
+          `).join('');
+          lucide.createIcons();
+        }
+      });
+
+      if (form) {
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const newPass = newPassInput?.value;
+          const confirmPass = confirmInput?.value;
+
+          if (newPass !== confirmPass) {
+            this.showToast('Mismatch', 'Passwords do not match.', 'error');
+            return;
+          }
+
+          const validation = this.authManager.validatePassword(newPass);
+          if (!validation.isValid) {
+            this.showToast('Weak Password', 'Password must have uppercase, lowercase, digit, and a special character.', 'error');
+            return;
+          }
+
+          if (!this.tempResetEmail || !this.tempResetOtp) {
+            this.showToast('Session Expired', 'Please start the reset process again.', 'error');
+            this.currentScreenState = 'forgot-password';
+            this.renderActivePage();
+            return;
+          }
+
+          try {
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Updating...'; }
+
+            await this.authManager.resetPassword(this.tempResetEmail, this.tempResetOtp, newPass);
+
+            // Clear temp reset state
+            this.tempResetEmail = null;
+            this.tempResetOtp = null;
+
+            this.showToast('Password Reset!', 'Your password has been updated. Please login.', 'success');
+            this.currentScreenState = 'login';
+            this.renderActivePage();
+          } catch (err) {
+            this.showToast('Reset Failed', err.message || 'Invalid or expired code. Please try again.', 'error');
+            // If code is wrong/expired, go back to OTP entry
+            if (err.message && (err.message.includes('Invalid') || err.message.includes('expired'))) {
+              this.tempResetOtp = null;
+              this.currentScreenState = 'reset-verify';
+              this.renderActivePage();
+            } else {
+              const submitBtn = form.querySelector('button[type="submit"]');
+              if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i data-lucide="check-circle"></i> Set New Password'; lucide.createIcons(); }
+            }
+          }
+        });
+      }
     }
 
     // 5. LOCK SCREEN
@@ -1500,6 +1972,25 @@ class AppOrchestrator {
         this.locationManager.initUserMap('user-zones-map');
       }, 50);
 
+      // Geocoding Search Handlers
+      const searchInput = document.getElementById('map-search-input');
+      const searchBtn = document.getElementById('map-search-btn');
+      
+      const performSearch = () => {
+        const query = searchInput?.value.trim();
+        if (query) {
+          this.locationManager.searchAddress(query);
+        }
+      };
+
+      searchBtn?.addEventListener('click', performSearch);
+      searchInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          performSearch();
+        }
+      });
+
       // Bind category toggles
       const mapFilters = document.querySelectorAll('.map-control-btn');
       mapFilters.forEach(btn => {
@@ -1517,11 +2008,11 @@ class AppOrchestrator {
         e.preventDefault();
         const name = document.getElementById('zone-name').value;
         const radius = parseFloat(document.getElementById('zone-radius').value);
-        const lat = this.locationManager.lat;
-        const lng = this.locationManager.lng;
+        const lat = this.locationManager.selectedLat;
+        const lng = this.locationManager.selectedLng;
         
         await this.locationManager.addSafeZone(name, lat, lng, radius);
-        this.showToast('Safe Zone Created', `${name} safe zone added at current position.`, 'success');
+        this.showToast('Safe Zone Created', `${name} safe zone added at selected position.`, 'success');
         this.renderActivePage();
       });
 
@@ -1536,7 +2027,7 @@ class AppOrchestrator {
       });
     }
 
-    // 10. INCIDENT HISTORY DETAIL REPLAY
+    // 10. INCIDENT HISTORY DETAIL REPLAY & MANAGEMENT
     if (this.currentScreenState === 'history') {
       document.querySelectorAll('.history-item-replay-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1546,6 +2037,34 @@ class AppOrchestrator {
             this.showIncidentReplayModal(incident);
           }
         });
+      });
+
+      document.querySelectorAll('.history-item-delete-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const incidentId = btn.dataset.incid;
+          if (confirm("Are you sure you want to delete this incident log?")) {
+            const success = await this.historyManager.deleteIncident(incidentId);
+            if (success) {
+              this.showToast('Log Deleted', 'Incident log removed permanently.', 'success');
+              this.logEvent(`Incident log ${incidentId} deleted by user.`, 'warning');
+              this.renderActivePage();
+            } else {
+              this.showToast('Error', 'Could not delete incident log.', 'error');
+            }
+          }
+        });
+      });
+
+      document.getElementById('btn-add-mock-log')?.addEventListener('click', async () => {
+        const type = prompt("Enter emergency category name (e.g., robbery, harassment):", "Simulated Emergency");
+        if (type) {
+          const newLog = await this.historyManager.createMockIncident(type);
+          if (newLog) {
+            this.showToast('Log Created', 'Mock emergency log added successfully.', 'success');
+            this.logEvent(`Mock incident log created: ${type}`, 'info');
+            this.renderActivePage();
+          }
+        }
       });
     }
 
@@ -1578,7 +2097,7 @@ class AppOrchestrator {
       // Logout button
       document.getElementById('user-logout-btn')?.addEventListener('click', () => {
         this.authManager.logout();
-        this.currentScreenState = 'login';
+        this.currentScreenState = 'signup';
         this.showToast('Logged Out', 'Session terminated safely.', 'success');
         this.renderActivePage();
       });

@@ -5,10 +5,15 @@
 export class LocationManager {
   constructor(app) {
     this.app = app;
-    this.lat = 40.7128; // Default: NYC
-    this.lng = -74.0060;
+    this.lat = 6.5244; // Default: Lagos, Nigeria
+    this.lng = 3.3792;
     this.accuracy = 10;
     this.path = []; // Coordinate history
+    
+    // Custom Selected Location Targets (for Safe Zones setting)
+    this.selectedLat = 6.5244;
+    this.selectedLng = 3.3792;
+    this.selectedMarker = null;
     
     this.isTracking = false;
     this.watchId = null;
@@ -20,48 +25,48 @@ export class LocationManager {
     this.contactMarker = null;
     this.userPathLine = null;
     this.contactPathLine = null;
-    this.deviationThreshold = 0.0015; // Angular deviation threshold (~150 meters)
+    this.deviationThreshold = 0.0005; // Angular deviation threshold (~50 meters)
     
     this.safetyZones = [];
     this.safetyZonesGroup = null;
 
     // Safe Walk state
     this.safeWalkActive = false;
-    this.destination = { name: 'Workplace', lat: 40.7185, lng: -74.0015 };
+    this.destination = { name: 'Workplace', lat: 6.5290, lng: 3.3840 };
     this.plannedRoute = [
-      { lat: 40.7128, lng: -74.0060 }, // Home
-      { lat: 40.7142, lng: -74.0050 },
-      { lat: 40.7156, lng: -74.0040 },
-      { lat: 40.7170, lng: -74.0030 },
-      { lat: 40.7185, lng: -74.0015 }  // Workplace
+      { lat: 6.5244, lng: 3.3792 }, // Home (Lagos Island)
+      { lat: 6.5252, lng: 3.3806 },
+      { lat: 6.5262, lng: 3.3818 },
+      { lat: 6.5274, lng: 3.3829 },
+      { lat: 6.5290, lng: 3.3840 }  // Workplace (Victoria Island)
     ];
     this.routeIndex = 0;
     
     // Simulated path variants
     this.simulatedPaths = {
       stationary: [
-        { lat: 40.7128, lng: -74.0060 }
+        { lat: 6.5244, lng: 3.3792 }
       ],
       'safe-walk': [
-        { lat: 40.7128, lng: -74.0060 },
-        { lat: 40.7142, lng: -74.0050 },
-        { lat: 40.7156, lng: -74.0040 },
-        { lat: 40.7170, lng: -74.0030 },
-        { lat: 40.7185, lng: -74.0015 }
+        { lat: 6.5244, lng: 3.3792 },
+        { lat: 6.5252, lng: 3.3806 },
+        { lat: 6.5262, lng: 3.3818 },
+        { lat: 6.5274, lng: 3.3829 },
+        { lat: 6.5290, lng: 3.3840 }
       ],
       deviation: [
-        { lat: 40.7128, lng: -74.0060 },
-        { lat: 40.7142, lng: -74.0050 },
-        { lat: 40.7156, lng: -74.0040 },
-        { lat: 40.7140, lng: -74.0090 }, // Deviated point!
-        { lat: 40.7125, lng: -74.0120 }
+        { lat: 6.5244, lng: 3.3792 },
+        { lat: 6.5252, lng: 3.3806 },
+        { lat: 6.5262, lng: 3.3818 },
+        { lat: 6.5240, lng: 3.3760 }, // Deviated point!
+        { lat: 6.5225, lng: 3.3740 }
       ],
       'emergency-move': [
-        { lat: 40.7128, lng: -74.0060 },
-        { lat: 40.7135, lng: -74.0075 },
-        { lat: 40.7145, lng: -74.0090 },
-        { lat: 40.7155, lng: -74.0080 },
-        { lat: 40.7168, lng: -74.0070 }
+        { lat: 6.5244, lng: 3.3792 },
+        { lat: 6.5238, lng: 3.3775 },
+        { lat: 6.5228, lng: 3.3758 },
+        { lat: 6.5218, lng: 3.3770 },
+        { lat: 6.5205, lng: 3.3780 }
       ]
     };
     
@@ -136,7 +141,12 @@ export class LocationManager {
     // Check if map is already initialized
     if (this.userMap) {
       this.userMap.remove();
+      this.selectedMarker = null; // Reset selection marker on map rebuild
     }
+    
+    // Reset selected coordinates to current user location when map is rebuilt
+    this.selectedLat = this.lat;
+    this.selectedLng = this.lng;
     
     try {
       this.userMap = L.map(elementId, { zoomControl: false }).setView([this.lat, this.lng], 15);
@@ -180,6 +190,9 @@ export class LocationManager {
           
           this.app.logEvent(`Added custom route waypoint: ${lat.toFixed(5)}, ${lng.toFixed(5)}`, 'info');
           this.app.showToast('Waypoint Added', 'Waypoint saved to custom Safe Walk route.', 'success');
+        } else {
+          const { lat, lng } = e.latlng;
+          this.setSelectedLocation(lat, lng, `Tapped Map Location`);
         }
       });
     } catch (e) {
@@ -409,21 +422,21 @@ export class LocationManager {
     
     const assistanceMarkers = [];
     
-    // Generate mock assistance assets near current user lat/lng
+    // Generate mock assistance assets near current user lat/lng (Nigeria-based)
     const mockServices = {
       police: [
-        { name: 'Midtown Police Station', lat: this.lat + 0.004, lng: this.lng - 0.003 },
-        { name: 'Precinct 14 Office', lat: this.lat - 0.005, lng: this.lng + 0.005 }
+        { name: 'Lagos Area Command Police HQ', lat: this.lat + 0.004, lng: this.lng - 0.003 },
+        { name: 'Panti Police Division', lat: this.lat - 0.005, lng: this.lng + 0.005 }
       ],
       hospital: [
-        { name: 'St. Jude General Hospital', lat: this.lat + 0.002, lng: this.lng + 0.004 },
-        { name: 'City Urgent Emergency Care', lat: this.lat - 0.003, lng: this.lng - 0.006 }
+        { name: 'Lagos Island General Hospital', lat: this.lat + 0.002, lng: this.lng + 0.004 },
+        { name: 'LASUTH Emergency Care Centre', lat: this.lat - 0.003, lng: this.lng - 0.006 }
       ],
       fire: [
-        { name: 'Engine Co. 54 Fire Station', lat: this.lat - 0.002, lng: this.lng + 0.002 }
+        { name: 'Lagos State Fire Service - Marina', lat: this.lat - 0.002, lng: this.lng + 0.002 }
       ],
       security: [
-        { name: 'Shield Corp Security Office', lat: this.lat + 0.006, lng: this.lng + 0.002 }
+        { name: 'G4S Nigeria Security Office', lat: this.lat + 0.006, lng: this.lng + 0.002 }
       ]
     };
     
@@ -445,5 +458,68 @@ export class LocationManager {
     });
     
     this.assistanceGroup = L.layerGroup(assistanceMarkers).addTo(this.userMap);
+  }
+
+  setSelectedLocation(lat, lng, labelText) {
+    this.selectedLat = lat;
+    this.selectedLng = lng;
+    
+    // Update label in UI if it exists
+    const label = document.getElementById('selected-location-label');
+    if (label) {
+      label.textContent = `Target: ${labelText} (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+    }
+    
+    // Add or update selection target marker on the map
+    if (this.userMap) {
+      if (this.selectedMarker) {
+        this.selectedMarker.setLatLng([lat, lng]);
+        this.selectedMarker.setPopupContent(`<b>Selected: ${labelText}</b>`);
+      } else {
+        const pinIcon = L.divIcon({
+          className: 'target-div-icon',
+          html: `<div style="background-color: var(--color-green); width: 14px; height: 14px; border-radius: 50%; border: 2.5px solid white; box-shadow: 0 0 10px rgba(0, 242, 169, 0.6); animation: pulse-dot 1s infinite alternate;"></div>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7]
+        });
+        this.selectedMarker = L.marker([lat, lng], { icon: pinIcon }).addTo(this.userMap)
+          .bindPopup(`<b>Selected: ${labelText}</b>`).openPopup();
+      }
+      this.userMap.panTo([lat, lng]);
+    }
+  }
+
+  async searchAddress(query) {
+    if (!query) return;
+    
+    this.app.logEvent(`Geocoding search initiated: "${query}"`, 'info');
+    try {
+      // Nominatim search query — restricted to Nigeria (countrycodes=ng)
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=ng`, {
+        headers: {
+          'Accept-Language': 'en'
+        }
+      });
+      
+      if (!response.ok) throw new Error('Search request failed');
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        const result = data[0];
+        const lat = parseFloat(result.lat);
+        const lng = parseFloat(result.lon);
+        const displayName = result.display_name.split(',')[0] || result.type || 'Searched Location';
+        
+        this.setSelectedLocation(lat, lng, displayName);
+        this.app.logEvent(`Geocoding matches: ${displayName} (${lat.toFixed(5)}, ${lng.toFixed(5)})`, 'success');
+        this.app.showToast('Location Found', `Centered map on: ${displayName}`, 'success');
+      } else {
+        this.app.showToast('No Results', 'No locations matched your search query.', 'error');
+        this.app.logEvent(`Geocoding: no search results for "${query}"`, 'warning');
+      }
+    } catch (err) {
+      console.error('Geocoding search failed:', err);
+      this.app.showToast('Search Error', 'Unable to reach geocoding lookup service.', 'error');
+    }
   }
 }

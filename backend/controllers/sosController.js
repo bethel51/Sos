@@ -338,6 +338,72 @@ const sosController = {
       console.error('Get history error:', err);
       res.status(500).json({ error: 'Internal server error fetching history.' });
     }
+  },
+
+  // Delete history item
+  async deleteHistoryItem(req, res) {
+    try {
+      const { id } = req.params;
+      const incident = await dbQuery.get('SELECT user_id FROM incidents WHERE id = ?', [id]);
+      if (!incident) {
+        return res.status(404).json({ error: 'Incident not found' });
+      }
+      await dbQuery.run('DELETE FROM incidents WHERE id = ?', [id]);
+      await dbQuery.run('DELETE FROM incident_locations WHERE incident_id = ?', [id]);
+      await dbQuery.run('DELETE FROM incident_photos WHERE incident_id = ?', [id]);
+      res.json({ success: true, message: 'Incident log deleted successfully' });
+    } catch (err) {
+      console.error('Delete history error:', err);
+      res.status(500).json({ error: 'Internal server error deleting incident.' });
+    }
+  },
+
+  // Create mock history item
+  async createMockHistoryItem(req, res) {
+    try {
+      const { type } = req.body;
+      const incidentId = 'inc_' + Math.random().toString(36).substring(2, 9);
+      const user = await dbQuery.get('SELECT * FROM users WHERE id = ?', [req.userId]);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      const startTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const endTime = new Date(Date.now() + 15 * 60 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const dateStr = new Date().toISOString().split('T')[0];
+      
+      await dbQuery.run(
+        `INSERT INTO incidents (id, user_id, user_name, user_phone, type, start_time, end_time, date, duration, is_active, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+        [
+          incidentId,
+          req.userId,
+          user.name,
+          user.phone,
+          type || 'Mock Emergency Alert',
+          startTime,
+          endTime,
+          dateStr,
+          '15 mins',
+          'Simulated test incident added manually.'
+        ]
+      );
+      
+      await dbQuery.run(
+        `INSERT INTO incident_locations (incident_id, lat, lng, timestamp) VALUES (?, 40.7128, -74.0060, ?)`,
+        [incidentId, startTime]
+      );
+      await dbQuery.run(
+        `INSERT INTO incident_locations (incident_id, lat, lng, timestamp) VALUES (?, 40.7135, -74.0055, ?)`,
+        [incidentId, endTime]
+      );
+      
+      const created = await dbQuery.get('SELECT * FROM incidents WHERE id = ?', [incidentId]);
+      const fullObj = await assembleIncident(created);
+      res.status(201).json(fullObj);
+    } catch (err) {
+      console.error('Create mock history error:', err);
+      res.status(500).json({ error: 'Internal server error creating mock incident.' });
+    }
   }
 };
 

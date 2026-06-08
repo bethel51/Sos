@@ -70,13 +70,13 @@ export class AuthManager {
     };
   }
 
-  async signUp(userData) {
+  async sendOTP(userData) {
     const validation = this.validatePassword(userData.password);
     if (!validation.isValid) {
       throw new Error('Password does not meet secure strength requirements.');
     }
 
-    const response = await fetch('/api/auth/signup', {
+    const response = await fetch('/api/auth/send-otp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(userData)
@@ -84,7 +84,21 @@ export class AuthManager {
 
     const data = await response.json();
     if (!response.ok) {
-      throw new Error(data.error || 'Signup failed');
+      throw new Error(data.error || 'Failed to dispatch verification email');
+    }
+    return true;
+  }
+
+  async verifyAndSignUp(email, code) {
+    const response = await fetch('/api/auth/verify-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Verification failed');
     }
 
     localStorage.setItem(this.tokenKey, data.token);
@@ -138,7 +152,21 @@ export class AuthManager {
     return data.user;
   }
 
-  async resetPassword(email, newPassword) {
+  async forgotPassword(email) {
+    const response = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to send password reset code.');
+    }
+    return true;
+  }
+
+  async resetPassword(email, code, newPassword) {
     const validation = this.validatePassword(newPassword);
     if (!validation.isValid) {
       throw new Error('Password does not meet secure strength requirements.');
@@ -147,13 +175,14 @@ export class AuthManager {
     const response = await fetch('/api/auth/reset-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, newPassword })
+      body: JSON.stringify({ email, code, newPassword })
     });
 
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data.error || 'Password reset failed');
     }
+    return true;
   }
 
   async suspendUser(userId, suspendState) {

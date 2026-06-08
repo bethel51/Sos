@@ -7,16 +7,60 @@ export class ContactDashboard {
     this.app = app;
     this.logsList = [];
     this.lastFetchedIncidentId = null;
+    this.isContactAuthenticated = false;
   }
 
   init() {
+    this.checkSession();
     this.bindEvents();
     this.renderRestingState();
+    this.setupSocketListeners();
     
     // Poll for active SOS alerts in the backend database
     setInterval(() => {
       this.pollActiveIncident();
+      if (this.app.socket) this.setupSocketListeners();
     }, 3000);
+  }
+
+  checkSession() {
+    const isAuth = localStorage.getItem('silentsos_contact_authenticated') === 'true';
+    this.isContactAuthenticated = isAuth;
+    this.toggleConsoleView();
+  }
+
+  toggleConsoleView() {
+    const overlay = document.getElementById('contact-login-overlay');
+    const content = document.getElementById('contact-dashboard-content');
+    if (this.isContactAuthenticated) {
+      if (overlay) overlay.classList.add('hidden');
+      if (content) content.classList.remove('hidden');
+    } else {
+      if (overlay) overlay.classList.remove('hidden');
+      if (content) content.classList.add('hidden');
+    }
+  }
+
+  setupSocketListeners() {
+    if (this.app.socket) {
+      this.app.socket.off('live_audio_chunk');
+      this.app.socket.on('live_audio_chunk', (data) => {
+        if (data && data.chunk) {
+          this.playAudioChunk(data.chunk);
+        }
+      });
+    }
+  }
+
+  playAudioChunk(base64Data) {
+    if (!base64Data || typeof base64Data !== 'string' || base64Data.startsWith('mock_')) return;
+    try {
+      const audio = new Audio(base64Data);
+      audio.volume = 1.0;
+      audio.play().catch(e => console.warn("Live audio chunk play blocked or failed:", e));
+    } catch (err) {
+      console.error("Audio chunk playback error:", err);
+    }
   }
 
   bindEvents() {
@@ -36,6 +80,50 @@ export class ContactDashboard {
         if (img) {
           this.openImageModal(img.src);
         }
+      });
+    }
+
+    // Contact Login Form Submit
+    const loginForm = document.getElementById('contact-login-form');
+    if (loginForm) {
+      loginForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const email = document.getElementById('contact-auth-email').value;
+        const pin = document.getElementById('contact-auth-pin').value;
+        
+        // Gating/Validation Logic:
+        // Get user PIN (default to 1234 or verify against active account)
+        const expectedPin = this.app.authManager.currentUser ? this.app.authManager.currentUser.pin : '1234';
+        
+        if (pin === expectedPin) {
+          this.isContactAuthenticated = true;
+          localStorage.setItem('silentsos_contact_authenticated', 'true');
+          this.toggleConsoleView();
+          this.app.showToast('Access Granted', 'Emergency contact console authenticated.', 'success');
+          this.app.logEvent('Contact authenticated console access.', 'info');
+          
+          // Trigger updates
+          this.update();
+          if (this.app.locationManager.contactMap) {
+            setTimeout(() => {
+              this.app.locationManager.contactMap.invalidateSize();
+            }, 100);
+          }
+        } else {
+          this.app.showToast('Authentication Failed', 'Invalid credentials or PIN mismatch.', 'error');
+        }
+      });
+    }
+
+    // Contact Logout/Disconnect Click
+    const logoutBtn = document.getElementById('contact-logout-btn');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', () => {
+        this.isContactAuthenticated = false;
+        localStorage.removeItem('silentsos_contact_authenticated');
+        this.toggleConsoleView();
+        this.app.showToast('Console Locked', 'Disconnected from surveillance feed.', 'info');
+        this.app.logEvent('Contact disconnected from emergency console.', 'info');
       });
     }
   }

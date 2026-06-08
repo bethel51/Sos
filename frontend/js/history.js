@@ -45,6 +45,41 @@ export class HistoryManager {
     localStorage.setItem(`silentsos_history_${this.userId}`, JSON.stringify(this.incidents));
   }
 
+  async createMockIncident(type) {
+    try {
+      const response = await fetch('/api/history', {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ type })
+      });
+      if (response.ok) {
+        const newInc = await response.json();
+        this.incidents.unshift(newInc);
+        localStorage.setItem(`silentsos_history_${this.userId}`, JSON.stringify(this.incidents));
+        return newInc;
+      }
+    } catch (e) {
+      console.error('Error creating mock incident log:', e);
+    }
+  }
+
+  async deleteIncident(id) {
+    try {
+      const response = await fetch(`/api/history/${id}`, {
+        method: 'DELETE',
+        headers: this.getHeaders()
+      });
+      if (response.ok) {
+        this.incidents = this.incidents.filter(inc => inc.id !== id);
+        localStorage.setItem(`silentsos_history_${this.userId}`, JSON.stringify(this.incidents));
+        return true;
+      }
+    } catch (e) {
+      console.error('Error deleting incident log:', e);
+    }
+    return false;
+  }
+
   getIncidents() {
     return this.incidents;
   }
