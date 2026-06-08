@@ -104,7 +104,7 @@ const authController = {
         return res.status(400).json({ error: 'Verification code has expired. Please sign up again.' });
       }
 
-      if (pending.code !== code) {
+      if (String(pending.code) !== String(code)) {
         return res.status(400).json({ error: 'Invalid verification code.' });
       }
 
@@ -317,7 +317,7 @@ const authController = {
         return res.status(400).json({ error: 'Password reset code has expired.' });
       }
 
-      if (pending.code !== code) {
+      if (String(pending.code) !== String(code)) {
         return res.status(400).json({ error: 'Invalid verification code.' });
       }
 
