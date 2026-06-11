@@ -1,9 +1,9 @@
-const { dbQuery } = require('../config/db');
+const SafeZone = require('../models/safeZone');
 
 const safeZonesController = {
   async getZones(req, res) {
     try {
-      const list = await dbQuery.all('SELECT * FROM safe_zones WHERE user_id = ?', [req.userId]);
+      const list = await SafeZone.find({ userId: req.userId });
       res.json(list);
     } catch (err) {
       console.error('Get safe zones error:', err);
@@ -19,11 +19,15 @@ const safeZonesController = {
 
     try {
       const zoneId = 'zone_' + Date.now();
-      await dbQuery.run(
-        `INSERT INTO safe_zones (id, user_id, name, lat, lng, radius) VALUES (?, ?, ?, ?, ?, ?)`,
-        [zoneId, req.userId, name, lat, lng, radius]
-      );
-      res.status(201).json({ id: zoneId, name, lat, lng, radius });
+      const newZone = await SafeZone.create({
+        _id: zoneId,
+        userId: req.userId,
+        name,
+        lat,
+        lng,
+        radius
+      });
+      res.status(201).json(newZone);
     } catch (err) {
       console.error('Add safe zone error:', err);
       res.status(500).json({ error: 'Internal server error creating safe zone.' });
@@ -33,12 +37,12 @@ const safeZonesController = {
   async deleteZone(req, res) {
     const zoneId = req.params.id;
     try {
-      const zone = await dbQuery.get('SELECT id FROM safe_zones WHERE id = ? AND user_id = ?', [zoneId, req.userId]);
+      const zone = await SafeZone.findOne({ _id: zoneId, userId: req.userId });
       if (!zone) {
         return res.status(404).json({ error: 'Safe zone not found.' });
       }
 
-      await dbQuery.run('DELETE FROM safe_zones WHERE id = ?', [zoneId]);
+      await SafeZone.deleteOne({ _id: zoneId });
       res.json({ success: true });
     } catch (err) {
       console.error('Delete safe zone error:', err);

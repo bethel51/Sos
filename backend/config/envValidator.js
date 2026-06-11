@@ -3,10 +3,11 @@ const logger = require('./logger');
 function validateEnv() {
   const isProduction = process.env.NODE_ENV === 'production';
 
-  const requiredKeys = ['JWT_SECRET', 'ADMIN_TOKEN'];
+  const requiredKeys = ['JWT_SECRET', 'ADMIN_TOKEN', 'MONGODB_URI'];
   const defaultValues = {
     JWT_SECRET: 'silentsos_jwt_secret_key',
-    ADMIN_TOKEN: 'admin_secret_token'
+    ADMIN_TOKEN: 'admin_secret_token',
+    MONGODB_URI: 'mongodb://127.0.0.1:27017/leadcity-sos'
   };
 
   const missing = [];

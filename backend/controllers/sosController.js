@@ -1,57 +1,40 @@
 const fs = require('fs');
 const path = require('path');
-const { dbQuery } = require('../config/db');
+const User = require('../models/user');
+const Contact = require('../models/contact');
+const Incident = require('../models/incident');
 const { broadcastIncidentUpdate } = require('../config/socket');
 const notificationService = require('../services/notificationService');
 
-async function assembleIncident(incidentRow) {
-  if (!incidentRow) return null;
-  const locations = await dbQuery.all(
-    'SELECT lat, lng, timestamp FROM incident_locations WHERE incident_id = ? ORDER BY id ASC',
-    [incidentRow.id]
-  );
-  const photos = await dbQuery.all(
-    'SELECT photo_data FROM incident_photos WHERE incident_id = ? ORDER BY id ASC',
-    [incidentRow.id]
-  );
+async function assembleIncident(incident) {
+  if (!incident) return null;
 
-  const formattedPhotos = photos.map(p => {
-    try {
-      return JSON.parse(p.photo_data);
-    } catch (e) {
-      return { src: p.photo_data, source: 'unknown', timestamp: '' };
-    }
-  });
-
-  const userRow = await dbQuery.get(
-    'SELECT email, dob, blood_group, medical_conditions, emergency_notes, home_address FROM users WHERE id = ?',
-    [incidentRow.user_id]
-  );
+  const user = await User.findById(incident.userId);
 
   return {
-    id: incidentRow.id,
-    userId: incidentRow.user_id,
-    userName: incidentRow.user_name,
-    userPhone: incidentRow.user_phone,
-    userEmail: userRow ? userRow.email : '',
-    dob: userRow ? userRow.dob : '',
-    bloodGroup: userRow ? userRow.blood_group : '',
-    medicalConditions: userRow ? userRow.medical_conditions : '',
-    emergencyNotes: userRow ? userRow.emergency_notes : '',
-    homeAddress: userRow ? userRow.home_address : '',
-    startTime: incidentRow.start_time,
-    date: incidentRow.date,
-    type: incidentRow.type,
+    id: incident.id,
+    userId: incident.userId,
+    userName: incident.userName,
+    userPhone: incident.userPhone,
+    userEmail: user ? user.email : '',
+    dob: user ? user.dob : '',
+    bloodGroup: user ? user.bloodGroup : '',
+    medicalConditions: user ? user.medicalConditions : '',
+    emergencyNotes: user ? user.emergencyNotes : '',
+    homeAddress: user ? user.homeAddress : '',
+    startTime: incident.startTime,
+    date: incident.date,
+    type: incident.type,
     lastLocation: {
-      lat: incidentRow.last_location_lat,
-      lng: incidentRow.last_location_lng
+      lat: incident.lastLocationLat,
+      lng: incident.lastLocationLng
     },
-    locationPath: locations.map(l => ({ lat: l.lat, lng: l.lng, timestamp: l.timestamp })),
-    photos: formattedPhotos,
-    audioRecordingUrl: incidentRow.audio_recording_url,
-    notes: incidentRow.notes,
-    endTime: incidentRow.end_time || undefined,
-    duration: incidentRow.duration || undefined
+    locationPath: incident.locationPath.map(l => ({ lat: l.lat, lng: l.lng, timestamp: l.timestamp })),
+    photos: incident.photos,
+    audioRecordingUrl: incident.audioRecordingUrl,
+    notes: incident.notes,
+    endTime: incident.endTime || undefined,
+    duration: incident.duration || undefined
   };
 }
 
@@ -59,11 +42,11 @@ const sosController = {
   // Check active emergency
   async checkActiveIncident(req, res) {
     try {
-      const activeIncidentRow = await dbQuery.get('SELECT * FROM incidents WHERE is_active = 1 LIMIT 1');
-      if (!activeIncidentRow) {
+      const activeIncident = await Incident.findOne({ isActive: true });
+      if (!activeIncident) {
         return res.json({ active: false });
       }
-      const incident = await assembleIncident(activeIncidentRow);
+      const incident = await assembleIncident(activeIncident);
       res.json({ active: true, incident });
     } catch (err) {
       console.error('Check active incident error:', err);
@@ -77,46 +60,38 @@ const sosController = {
     const dateNow = new Date();
     const incidentId = 'incident_' + Date.now();
     
-    const lat = location ? location.lat : 40.7128;
-    const lng = location ? location.lng : -74.0060;
+    const lat = location ? location.lat : 4.8156;
+    const lng = location ? location.lng : 7.0498;
     const startTimeText = dateNow.toLocaleTimeString();
     const dateText = dateNow.toISOString().split('T')[0];
 
     try {
       // Deactivate any existing active incidents for safety first
-      await dbQuery.run('UPDATE incidents SET is_active = 0 WHERE user_id = ? AND is_active = 1', [req.userId]);
+      await Incident.updateMany({ userId: req.userId, isActive: true }, { isActive: false });
 
       // Create new active incident
-      await dbQuery.run(
-        `INSERT INTO incidents (id, user_id, user_name, user_phone, start_time, date, type, last_location_lat, last_location_lng, is_active, audio_recording_url, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, null, '')`,
-        [
-          incidentId,
-          req.userId,
-          req.user.name,
-          req.user.phone,
-          startTimeText,
-          dateText,
-          type || 'Unspecified Threat',
-          lat,
-          lng
-        ]
-      );
+      const newIncident = await Incident.create({
+        _id: incidentId,
+        userId: req.userId,
+        userName: req.user.name,
+        userPhone: req.user.phone,
+        startTime: startTimeText,
+        date: dateText,
+        type: type || 'Unspecified Threat',
+        lastLocationLat: lat,
+        lastLocationLng: lng,
+        isActive: true,
+        locationPath: [{ lat, lng, timestamp: startTimeText }],
+        photos: []
+      });
 
-      // Insert initial location path
-      await dbQuery.run(
-        `INSERT INTO incident_locations (incident_id, lat, lng, timestamp) VALUES (?, ?, ?, ?)`,
-        [incidentId, lat, lng, startTimeText]
-      );
-
-      const incident = await dbQuery.get('SELECT * FROM incidents WHERE id = ?', [incidentId]);
-      const fullIncidentObj = await assembleIncident(incident);
+      const fullIncidentObj = await assembleIncident(newIncident);
 
       // WebSockets Broadcast
       broadcastIncidentUpdate(req.userId, 'sos_triggered', fullIncidentObj);
 
       // Send Alerts to Emergency Contacts
-      const contacts = await dbQuery.all('SELECT * FROM contacts WHERE user_id = ?', [req.userId]);
+      const contacts = await Contact.find({ userId: req.userId });
       const locationLink = `https://maps.google.com/?q=${lat},${lng}`;
       const dashboardLink = `${req.headers.origin || 'http://localhost:5173'}/`;
 
@@ -124,11 +99,11 @@ const sosController = {
         // Send email
         notificationService.sendEmail({
           to: contact.email,
-          subject: `[EMERGENCY] Silent SOS Alert: ${req.user.name} is in danger!`,
-          bodyText: `Hello ${contact.name},\n\n${req.user.name} has triggered a Silent SOS alert (${type}).\nLast known location: ${locationLink}\n\nMonitor live telemetry at the dashboard: ${dashboardLink}`,
+          subject: `[EMERGENCY] Lead City SOS Alert: ${req.user.name} is in danger!`,
+          bodyText: `Hello ${contact.name},\n\n${req.user.name} has triggered a Lead City SOS alert (${type}).\nLast known location: ${locationLink}\n\nMonitor live telemetry at the dashboard: ${dashboardLink}`,
           bodyHtml: `
             <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ff4d4d; border-radius: 8px;">
-              <h2 style="color: #d93838; margin-top: 0;">⚠️ Emergency Silent SOS Triggered</h2>
+              <h2 style="color: #d93838; margin-top: 0;">⚠️ Emergency Lead City SOS Triggered</h2>
               <p>Hello <strong>${contact.name}</strong>,</p>
               <p>Your emergency safety contact <strong>${req.user.name}</strong> has triggered an SOS alert.</p>
               <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
@@ -157,7 +132,7 @@ const sosController = {
         // Send SMS
         notificationService.sendSMS({
           to: contact.phone,
-          message: `Silent SOS: ${req.user.name} is in danger (${type || 'Unspecified Threat'}). View live map: ${dashboardLink}`
+          message: `Lead City SOS: ${req.user.name} is in danger (${type || 'Unspecified Threat'}). View live map: ${dashboardLink}`
         });
       }
 
@@ -176,27 +151,20 @@ const sosController = {
     }
 
     try {
-      const activeIncidentRow = await dbQuery.get('SELECT * FROM incidents WHERE user_id = ? AND is_active = 1', [req.userId]);
-      if (!activeIncidentRow) {
+      const activeIncident = await Incident.findOne({ userId: req.userId, isActive: true });
+      if (!activeIncident) {
         return res.status(404).json({ error: 'No active incident found.' });
       }
 
       const timestamp = new Date().toLocaleTimeString();
       
-      // Update last location
-      await dbQuery.run(
-        'UPDATE incidents SET last_location_lat = ?, last_location_lng = ? WHERE id = ?',
-        [lat, lng, activeIncidentRow.id]
-      );
+      // Update last location and path
+      activeIncident.lastLocationLat = lat;
+      activeIncident.lastLocationLng = lng;
+      activeIncident.locationPath.push({ lat, lng, timestamp });
+      await activeIncident.save();
 
-      // Add to path
-      await dbQuery.run(
-        'INSERT INTO incident_locations (incident_id, lat, lng, timestamp) VALUES (?, ?, ?, ?)',
-        [activeIncidentRow.id, lat, lng, timestamp]
-      );
-
-      const updatedIncident = await dbQuery.get('SELECT * FROM incidents WHERE id = ?', [activeIncidentRow.id]);
-      const fullIncidentObj = await assembleIncident(updatedIncident);
+      const fullIncidentObj = await assembleIncident(activeIncident);
 
       // WebSockets Broadcast
       broadcastIncidentUpdate(req.userId, 'location_update', fullIncidentObj);
@@ -213,8 +181,8 @@ const sosController = {
     const { photo, audio } = req.body;
 
     try {
-      const activeIncidentRow = await dbQuery.get('SELECT * FROM incidents WHERE user_id = ? AND is_active = 1', [req.userId]);
-      if (!activeIncidentRow) {
+      const activeIncident = await Incident.findOne({ userId: req.userId, isActive: true });
+      if (!activeIncident) {
         return res.status(404).json({ error: 'No active incident found.' });
       }
 
@@ -227,7 +195,7 @@ const sosController = {
             const ext = matches[1].split('/')[1] || 'png';
             const buffer = Buffer.from(matches[2], 'base64');
             
-            const filename = `evidence_${activeIncidentRow.id}_${Date.now()}_${Math.floor(Math.random() * 1000)}.${ext}`;
+            const filename = `evidence_${activeIncident.id}_${Date.now()}_${Math.floor(Math.random() * 1000)}.${ext}`;
             const filepath = path.join(__dirname, '..', '..', 'uploads', filename);
             
             fs.writeFileSync(filepath, buffer);
@@ -242,7 +210,7 @@ const sosController = {
           timestamp: photo.timestamp || new Date().toLocaleTimeString()
         };
 
-        await dbQuery.run('INSERT INTO incident_photos (incident_id, photo_data) VALUES (?, ?)', [activeIncidentRow.id, JSON.stringify(photoObj)]);
+        activeIncident.photos.push(photoObj);
       }
       
       if (audio) {
@@ -253,18 +221,18 @@ const sosController = {
             let ext = matches[1].split('/')[1] || 'wav';
             ext = ext.split(';')[0];
             const buffer = Buffer.from(matches[2], 'base64');
-            const filename = `evidence_audio_${activeIncidentRow.id}_${Date.now()}_${Math.floor(Math.random() * 1000)}.${ext}`;
+            const filename = `evidence_audio_${activeIncident.id}_${Date.now()}_${Math.floor(Math.random() * 1000)}.${ext}`;
             const filepath = path.join(__dirname, '..', '..', 'uploads', filename);
             
             fs.writeFileSync(filepath, buffer);
             audioUrl = `/uploads/${filename}`;
           }
         }
-        await dbQuery.run('UPDATE incidents SET audio_recording_url = ? WHERE id = ?', [audioUrl, activeIncidentRow.id]);
+        activeIncident.audioRecordingUrl = audioUrl;
       }
 
-      const updatedIncident = await dbQuery.get('SELECT * FROM incidents WHERE id = ?', [activeIncidentRow.id]);
-      const fullIncidentObj = await assembleIncident(updatedIncident);
+      await activeIncident.save();
+      const fullIncidentObj = await assembleIncident(activeIncident);
 
       // WebSockets Broadcast
       broadcastIncidentUpdate(req.userId, 'evidence_update', fullIncidentObj);
@@ -279,8 +247,8 @@ const sosController = {
   // Deactivate SOS
   async deactivateSOS(req, res) {
     try {
-      const activeIncidentRow = await dbQuery.get('SELECT * FROM incidents WHERE user_id = ? AND is_active = 1', [req.userId]);
-      if (!activeIncidentRow) {
+      const activeIncident = await Incident.findOne({ userId: req.userId, isActive: true });
+      if (!activeIncident) {
         return res.status(404).json({ error: 'No active incident found.' });
       }
 
@@ -295,7 +263,7 @@ const sosController = {
             const isAm = timeStr.includes('AM') && h === 12;
             return (h + (isPm ? 12 : 0) - (isAm ? 12 : 0)) * 3600 + m * 60 + s;
           };
-          const diffSecs = Math.abs(parseTime(endTimeText) - parseTime(activeIncidentRow.start_time));
+          const diffSecs = Math.abs(parseTime(endTimeText) - parseTime(activeIncident.startTime));
           const mins = Math.floor(diffSecs / 60);
           const secs = diffSecs % 60;
           return `${mins}m ${secs}s`;
@@ -304,15 +272,12 @@ const sosController = {
         }
       })();
 
-      await dbQuery.run(
-        `UPDATE incidents SET
-          end_time = ?, duration = ?, is_active = 0
-         WHERE id = ?`,
-        [endTimeText, durationText, activeIncidentRow.id]
-      );
+      activeIncident.endTime = endTimeText;
+      activeIncident.duration = durationText;
+      activeIncident.isActive = false;
+      await activeIncident.save();
 
-      const deactivatedIncident = await dbQuery.get('SELECT * FROM incidents WHERE id = ?', [activeIncidentRow.id]);
-      const fullIncidentObj = await assembleIncident(deactivatedIncident);
+      const fullIncidentObj = await assembleIncident(activeIncident);
 
       // WebSockets Broadcast
       broadcastIncidentUpdate(req.userId, 'sos_deactivated', fullIncidentObj);
@@ -327,7 +292,7 @@ const sosController = {
   // Get user's history
   async getHistory(req, res) {
     try {
-      const incidentRows = await dbQuery.all('SELECT * FROM incidents WHERE user_id = ? AND is_active = 0 ORDER BY id DESC', [req.userId]);
+      const incidentRows = await Incident.find({ userId: req.userId }).sort({ createdAt: -1 });
       const list = [];
       for (const row of incidentRows) {
         const fullObj = await assembleIncident(row);
@@ -344,13 +309,11 @@ const sosController = {
   async deleteHistoryItem(req, res) {
     try {
       const { id } = req.params;
-      const incident = await dbQuery.get('SELECT user_id FROM incidents WHERE id = ?', [id]);
+      const incident = await Incident.findById(id);
       if (!incident) {
         return res.status(404).json({ error: 'Incident not found' });
       }
-      await dbQuery.run('DELETE FROM incidents WHERE id = ?', [id]);
-      await dbQuery.run('DELETE FROM incident_locations WHERE incident_id = ?', [id]);
-      await dbQuery.run('DELETE FROM incident_photos WHERE incident_id = ?', [id]);
+      await Incident.deleteOne({ _id: id });
       res.json({ success: true, message: 'Incident log deleted successfully' });
     } catch (err) {
       console.error('Delete history error:', err);
@@ -363,7 +326,7 @@ const sosController = {
     try {
       const { type } = req.body;
       const incidentId = 'inc_' + Math.random().toString(36).substring(2, 9);
-      const user = await dbQuery.get('SELECT * FROM users WHERE id = ?', [req.userId]);
+      const user = await User.findById(req.userId);
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
@@ -371,34 +334,25 @@ const sosController = {
       const endTime = new Date(Date.now() + 15 * 60 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const dateStr = new Date().toISOString().split('T')[0];
       
-      await dbQuery.run(
-        `INSERT INTO incidents (id, user_id, user_name, user_phone, type, start_time, end_time, date, duration, is_active, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-        [
-          incidentId,
-          req.userId,
-          user.name,
-          user.phone,
-          type || 'Mock Emergency Alert',
-          startTime,
-          endTime,
-          dateStr,
-          '15 mins',
-          'Simulated test incident added manually.'
+      const newIncident = await Incident.create({
+        _id: incidentId,
+        userId: req.userId,
+        userName: user.name,
+        userPhone: user.phone,
+        type: type || 'Mock Emergency Alert',
+        startTime,
+        endTime,
+        date: dateStr,
+        duration: '15 mins',
+        isActive: false,
+        notes: 'Simulated test incident added manually.',
+        locationPath: [
+          { lat: 4.8156, lng: 7.0498, timestamp: startTime },
+          { lat: 4.8160, lng: 7.0505, timestamp: endTime }
         ]
-      );
+      });
       
-      await dbQuery.run(
-        `INSERT INTO incident_locations (incident_id, lat, lng, timestamp) VALUES (?, 40.7128, -74.0060, ?)`,
-        [incidentId, startTime]
-      );
-      await dbQuery.run(
-        `INSERT INTO incident_locations (incident_id, lat, lng, timestamp) VALUES (?, 40.7135, -74.0055, ?)`,
-        [incidentId, endTime]
-      );
-      
-      const created = await dbQuery.get('SELECT * FROM incidents WHERE id = ?', [incidentId]);
-      const fullObj = await assembleIncident(created);
+      const fullObj = await assembleIncident(newIncident);
       res.status(201).json(fullObj);
     } catch (err) {
       console.error('Create mock history error:', err);

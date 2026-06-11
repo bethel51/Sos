@@ -1,10 +1,13 @@
-const { dbQuery } = require('../config/db');
+const User = require('../models/user');
+const Contact = require('../models/contact');
+const Incident = require('../models/incident');
+const Session = require('../models/session');
 
 const adminController = {
   // Admin Login
   async login(req, res) {
     const { email, password } = req.body;
-    if (email === 'admin@silentsos.com' && password === 'admin123') {
+    if (email === 'admin@leadcitysos.com' && password === 'admin123') {
       return res.json({ token: 'admin_secret_token' });
     }
     res.status(400).json({ error: 'Invalid admin credentials' });
@@ -13,14 +16,14 @@ const adminController = {
   // Admin Stats
   async getStats(req, res) {
     try {
-      const userCount = await dbQuery.get('SELECT COUNT(*) as count FROM users');
-      const activeCount = await dbQuery.get('SELECT COUNT(*) as count FROM incidents WHERE is_active = 1');
-      const historyCount = await dbQuery.get('SELECT COUNT(*) as count FROM incidents WHERE is_active = 0');
+      const userCount = await User.countDocuments();
+      const activeCount = await Incident.countDocuments({ isActive: true });
+      const historyCount = await Incident.countDocuments({ isActive: false });
 
       res.json({
-        totalUsers: userCount.count,
-        activeEmergencies: activeCount.count,
-        totalHistory: historyCount.count,
+        totalUsers: userCount,
+        activeEmergencies: activeCount,
+        totalHistory: historyCount,
         uptime: '99.98%'
       });
     } catch (err) {
@@ -32,17 +35,17 @@ const adminController = {
   // Get Users List
   async getUsers(req, res) {
     try {
-      const users = await dbQuery.all('SELECT id, name, phone, email, status FROM users');
+      const users = await User.find({}, 'id name phone email status');
       const userList = [];
       for (const u of users) {
-        const contactCount = await dbQuery.get('SELECT COUNT(*) as count FROM contacts WHERE user_id = ?', [u.id]);
+        const contactCount = await Contact.countDocuments({ userId: u.id });
         userList.push({
           id: u.id,
           name: u.name,
           phone: u.phone,
           email: u.email,
           status: u.status,
-          sosContactsCount: contactCount.count
+          sosContactsCount: contactCount
         });
       }
       res.json(userList);
@@ -58,17 +61,18 @@ const adminController = {
     const suspend = req.body.suspend;
 
     try {
-      const user = await dbQuery.get('SELECT id FROM users WHERE id = ?', [userId]);
+      const user = await User.findById(userId);
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
 
       const status = suspend ? 'suspended' : 'active';
-      await dbQuery.run('UPDATE users SET status = ? WHERE id = ?', [status, userId]);
+      user.status = status;
+      await user.save();
 
       // If suspending, immediately delete all active sessions for this user
       if (suspend) {
-        await dbQuery.run('DELETE FROM sessions WHERE user_id = ?', [userId]);
+        await Session.deleteMany({ userId });
       }
 
       res.json({ success: true, status });

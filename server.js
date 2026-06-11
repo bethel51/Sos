@@ -74,6 +74,10 @@ const generalLimiter = rateLimit({
   max: 500, // Limit each IP to 500 requests per 15 minutes
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    const ip = req.ip || req.connection?.remoteAddress || '';
+    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || ip.includes('127.0.0.1');
+  },
   message: { error: 'Too many requests from this IP, please try again later.' }
 });
 
@@ -82,6 +86,10 @@ const authLimiter = rateLimit({
   max: 30, // Limit each IP to 30 login/signup requests per 15 minutes
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    const ip = req.ip || req.connection?.remoteAddress || '';
+    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || ip.includes('127.0.0.1');
+  },
   message: { error: 'Too many authentication attempts, please try again later.' }
 });
 
@@ -111,11 +119,14 @@ initializeDatabase()
   });
 
 // Health check endpoint
-const { dbQuery } = require('./backend/config/db');
+const mongoose = require('mongoose');
 app.get('/api/health', async (req, res) => {
   try {
-    // Run simple query to check SQLite integrity
-    await dbQuery.get('SELECT 1');
+    // Check if mongoose is connected
+    const isConnected = mongoose.connection.readyState === 1;
+    if (!isConnected) {
+      throw new Error('MongoDB is not connected');
+    }
     res.status(200).json({
       status: 'UP',
       timestamp: new Date().toISOString(),

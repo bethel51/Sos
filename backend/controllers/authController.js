@@ -1,12 +1,13 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { dbQuery } = require('../config/db');
+const User = require('../models/user');
+const Session = require('../models/session');
+const Settings = require('../models/settings');
 const { JWT_SECRET } = require('../middleware/auth');
 
 const pendingRegistrations = new Map();
 const pendingPasswordResets = new Map();
 
-// Format user row to CamelCase matching UI models (excluding decoy pin)
 function formatUser(user) {
   return {
     id: user.id,
@@ -15,11 +16,11 @@ function formatUser(user) {
     phone: user.phone,
     pin: user.pin,
     dob: user.dob,
-    bloodGroup: user.blood_group,
-    medicalConditions: user.medical_conditions,
-    emergencyNotes: user.emergency_notes,
-    homeAddress: user.home_address,
-    profilePicture: user.profile_picture,
+    bloodGroup: user.bloodGroup,
+    medicalConditions: user.medicalConditions,
+    emergencyNotes: user.emergencyNotes,
+    homeAddress: user.homeAddress,
+    profilePicture: user.profilePicture,
     status: user.status
   };
 }
@@ -34,13 +35,13 @@ const authController = {
 
     try {
       // Check for existing email
-      const existingEmail = await dbQuery.get('SELECT id FROM users WHERE LOWER(email) = LOWER(?)', [email]);
+      const existingEmail = await User.findOne({ email: new RegExp(`^${email}$`, 'i') });
       if (existingEmail) {
         return res.status(400).json({ error: 'Email is already registered.' });
       }
 
       // Check for existing phone
-      const existingPhone = await dbQuery.get('SELECT id FROM users WHERE phone = ?', [phone]);
+      const existingPhone = await User.findOne({ phone });
       if (existingPhone) {
         return res.status(400).json({ error: 'Phone number is already registered.' });
       }
@@ -64,14 +65,14 @@ const authController = {
       const notificationService = require('../services/notificationService');
       await notificationService.sendEmail({
         to: email,
-        subject: `Silent SOS - Verification Code: ${code}`,
+        subject: `Lead City SOS - Verification Code: ${code}`,
         bodyText: `Your verification code is ${code}. Please enter this code to complete your account setup.`,
         bodyHtml: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e4e6; border-radius: 8px; background-color: #06060c; color: #ffffff;">
-            <h2 style="color: #00f2fe; text-align: center;">Silent SOS Account Verification</h2>
+            <h2 style="color: #FFD700; text-align: center;">Lead City SOS Account Verification</h2>
             <p>Hello,</p>
-            <p>Thank you for creating an account with Silent SOS. Please use the following 4-digit verification code to secure and activate your account:</p>
-            <div style="background-color: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 15px; text-align: center; font-size: 28px; font-weight: bold; letter-spacing: 5px; color: #00f2fe; margin: 20px 0;">
+            <p>Thank you for creating an account with Lead City SOS Safety App. Please use the following 4-digit verification code to secure and activate your account:</p>
+            <div style="background-color: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 15px; text-align: center; font-size: 28px; font-weight: bold; letter-spacing: 5px; color: #FFD700; margin: 20px 0;">
               ${code}
             </div>
             <p style="font-size: 12px; color: #888;">This code is valid for 15 minutes. If you did not request this code, please ignore this email.</p>
@@ -79,7 +80,14 @@ const authController = {
         `
       });
 
-      res.status(200).json({ success: true, message: 'OTP sent to your email.' });
+      // In development/local mode, return the OTP code in the response for easy testing
+      // (since SMTP may not be whitelisted for local IPs)
+      const isDevMode = process.env.NODE_ENV !== 'production' || process.env.SHOW_OTP_IN_RESPONSE === 'true';
+      res.status(200).json({
+        success: true,
+        message: 'OTP sent to your email.',
+        ...(isDevMode ? { devOtp: code, devNote: 'Email SMTP may be restricted. Use this code to verify.' } : {})
+      });
     } catch (err) {
       console.error('Send OTP error:', err);
       res.status(500).json({ error: 'Internal server error sending OTP.' });
@@ -112,40 +120,34 @@ const authController = {
       const passwordHash = await bcrypt.hash(pending.password, 10);
       const userId = 'user_' + Date.now();
 
-      await dbQuery.run(
-        `INSERT INTO users (id, name, email, phone, password_hash, pin, dob, blood_group, medical_conditions, emergency_notes, home_address, profile_picture, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
-        [
-          userId,
-          pending.name,
-          pending.email,
-          pending.phone,
-          passwordHash,
-          pending.pin || '1234',
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-        ]
-      );
+      const newUser = await User.create({
+        _id: userId,
+        name: pending.name,
+        email: pending.email,
+        phone: pending.phone,
+        passwordHash: passwordHash,
+        pin: pending.pin || '1234',
+        status: 'active'
+      });
 
       // Initialize default configurations for new users
-      await dbQuery.run(
-        `INSERT OR IGNORE INTO user_settings (user_id, shake_enabled, power_tap_threshold, selected_template)
-         VALUES (?, 1, 5, 'I am in danger. Please check my location. (Silent SOS)')`,
-        [userId]
-      );
+      await Settings.create({
+        _id: userId,
+        shakeEnabled: true,
+        powerTapThreshold: 5,
+        selectedTemplate: 'I am in danger. Please check my location. (Lead City SOS)'
+      });
 
       // Create JWT session
       const token = jwt.sign({ userId }, JWT_SECRET, { expiresIn: '7d' });
-      await dbQuery.run('INSERT OR REPLACE INTO sessions (token, user_id) VALUES (?, ?)', [token, userId]);
+      await Session.create({
+        _id: token,
+        userId
+      });
 
       // Remove from pending registrations cache
       pendingRegistrations.delete(email.toLowerCase());
 
-      const newUser = await dbQuery.get('SELECT * FROM users WHERE id = ?', [userId]);
       res.status(201).json({ user: formatUser(newUser), token });
     } catch (err) {
       console.error('Verify OTP error:', err);
@@ -161,12 +163,12 @@ const authController = {
     }
 
     try {
-      const user = await dbQuery.get('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [email]);
+      const user = await User.findOne({ email: new RegExp(`^${email}$`, 'i') });
       if (!user) {
         return res.status(400).json({ error: 'User not found.' });
       }
 
-      const match = await bcrypt.compare(password, user.password_hash);
+      const match = await bcrypt.compare(password, user.passwordHash);
       if (!match) {
         return res.status(400).json({ error: 'Incorrect password.' });
       }
@@ -177,7 +179,10 @@ const authController = {
 
       // Create JWT session
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-      await dbQuery.run('INSERT OR REPLACE INTO sessions (token, user_id) VALUES (?, ?)', [token, user.id]);
+      await Session.create({
+        _id: token,
+        userId: user.id
+      });
 
       res.json({ user: formatUser(user), token });
     } catch (err) {
@@ -206,43 +211,24 @@ const authController = {
     } = req.body;
 
     try {
-      const existingUser = await dbQuery.get('SELECT * FROM users WHERE id = ?', [req.userId]);
-      if (!existingUser) {
+      const user = await User.findById(req.userId);
+      if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      // Use database fields or fall back to current values
-      const updatedName = name || existingUser.name;
-      const updatedPhone = phone || existingUser.phone;
-      const updatedDob = dob !== undefined ? dob : existingUser.dob;
-      const updatedBloodGroup = bloodGroup !== undefined ? bloodGroup : existingUser.blood_group;
-      const updatedMedicalConditions = medicalConditions !== undefined ? medicalConditions : existingUser.medical_conditions;
-      const updatedEmergencyNotes = emergencyNotes !== undefined ? emergencyNotes : existingUser.emergency_notes;
-      const updatedHomeAddress = homeAddress !== undefined ? homeAddress : existingUser.home_address;
-      const updatedPin = pin || existingUser.pin;
-      const updatedProfilePicture = profilePicture !== undefined ? profilePicture : existingUser.profile_picture;
+      if (name) user.name = name;
+      if (phone) user.phone = phone;
+      if (dob !== undefined) user.dob = dob;
+      if (bloodGroup !== undefined) user.bloodGroup = bloodGroup;
+      if (medicalConditions !== undefined) user.medicalConditions = medicalConditions;
+      if (emergencyNotes !== undefined) user.emergencyNotes = emergencyNotes;
+      if (homeAddress !== undefined) user.homeAddress = homeAddress;
+      if (pin) user.pin = pin;
+      if (profilePicture !== undefined) user.profilePicture = profilePicture;
 
-      await dbQuery.run(
-        `UPDATE users SET
-          name = ?, phone = ?, dob = ?, blood_group = ?, medical_conditions = ?,
-          emergency_notes = ?, home_address = ?, pin = ?, profile_picture = ?
-         WHERE id = ?`,
-        [
-          updatedName,
-          updatedPhone,
-          updatedDob,
-          updatedBloodGroup,
-          updatedMedicalConditions,
-          updatedEmergencyNotes,
-          updatedHomeAddress,
-          updatedPin,
-          updatedProfilePicture,
-          req.userId
-        ]
-      );
+      await user.save();
 
-      const updatedUser = await dbQuery.get('SELECT * FROM users WHERE id = ?', [req.userId]);
-      res.json({ user: formatUser(updatedUser) });
+      res.json({ user: formatUser(user) });
     } catch (err) {
       console.error('Update profile error:', err);
       res.status(500).json({ error: 'Internal server error updating profile.' });
@@ -257,7 +243,7 @@ const authController = {
     }
 
     try {
-      const user = await dbQuery.get('SELECT id FROM users WHERE LOWER(email) = LOWER(?)', [email]);
+      const user = await User.findOne({ email: new RegExp(`^${email}$`, 'i') });
       if (!user) {
         return res.status(404).json({ error: 'Email address not registered.' });
       }
@@ -272,11 +258,11 @@ const authController = {
       const notificationService = require('../services/notificationService');
       await notificationService.sendEmail({
         to: email,
-        subject: `Silent SOS - Password Reset OTP: ${code}`,
+        subject: `Lead City SOS - Password Reset OTP: ${code}`,
         bodyText: `Your password reset code is ${code}.`,
         bodyHtml: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e4e6; border-radius: 8px; background-color: #06060c; color: #ffffff;">
-            <h2 style="color: #ff2e63; text-align: center;">Silent SOS Password Reset</h2>
+            <h2 style="color: #ff2e63; text-align: center;">Lead City SOS Password Reset</h2>
             <p>Hello,</p>
             <p>We received a request to reset your password. Please use the following 4-digit verification code to proceed:</p>
             <div style="background-color: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 15px; text-align: center; font-size: 28px; font-weight: bold; letter-spacing: 5px; color: #ff2e63; margin: 20px 0;">
@@ -287,7 +273,12 @@ const authController = {
         `
       });
 
-      res.status(200).json({ success: true, message: 'Password reset code sent.' });
+      const isDevMode = process.env.NODE_ENV !== 'production' || process.env.SHOW_OTP_IN_RESPONSE === 'true';
+      res.status(200).json({
+        success: true,
+        message: 'Password reset code sent.',
+        ...(isDevMode ? { devOtp: code, devNote: 'Email SMTP may be restricted. Use this code to reset your password.' } : {})
+      });
     } catch (err) {
       console.error('Forgot password error:', err);
       res.status(500).json({ error: 'Internal server error sending password reset OTP.' });
@@ -302,7 +293,7 @@ const authController = {
     }
 
     try {
-      const user = await dbQuery.get('SELECT id FROM users WHERE LOWER(email) = LOWER(?)', [email]);
+      const user = await User.findOne({ email: new RegExp(`^${email}$`, 'i') });
       if (!user) {
         return res.status(404).json({ error: 'Email address not registered.' });
       }
@@ -322,9 +313,10 @@ const authController = {
       }
 
       const passwordHash = await bcrypt.hash(newPassword, 10);
-      await dbQuery.run('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, user.id]);
+      user.passwordHash = passwordHash;
+      await user.save();
 
-      await dbQuery.run('DELETE FROM sessions WHERE user_id = ?', [user.id]);
+      await Session.deleteMany({ userId: user.id });
       pendingPasswordResets.delete(email.toLowerCase());
 
       res.json({ success: true, message: 'Password updated successfully.' });

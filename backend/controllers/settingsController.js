@@ -1,24 +1,25 @@
-const { dbQuery } = require('../config/db');
+const Settings = require('../models/settings');
 
 const settingsController = {
   async getSettings(req, res) {
     try {
-      let settings = await dbQuery.get('SELECT * FROM user_settings WHERE user_id = ?', [req.userId]);
+      let settings = await Settings.findById(req.userId);
       if (!settings) {
         // Create default settings row if missing
-        await dbQuery.run(
-          `INSERT OR IGNORE INTO user_settings (user_id, shake_enabled, power_tap_threshold, selected_template, geofence_auto_sos_enabled)
-           VALUES (?, 1, 5, 'I am in danger. Please check my location. (Silent SOS)', 0)`,
-          [req.userId]
-        );
-        settings = await dbQuery.get('SELECT * FROM user_settings WHERE user_id = ?', [req.userId]);
+        settings = await Settings.create({
+          _id: req.userId,
+          shakeEnabled: true,
+          powerTapThreshold: 5,
+          selectedTemplate: 'I am in danger. Please check my location. (Lead City SOS)',
+          geofenceAutoSosEnabled: false
+        });
       }
 
       res.json({
-        shakeEnabled: settings.shake_enabled === 1,
-        powerTapThreshold: settings.power_tap_threshold,
-        selectedTemplate: settings.selected_template,
-        geofenceAutoSosEnabled: settings.geofence_auto_sos_enabled === 1
+        shakeEnabled: settings.shakeEnabled,
+        powerTapThreshold: settings.powerTapThreshold,
+        selectedTemplate: settings.selectedTemplate,
+        geofenceAutoSosEnabled: settings.geofenceAutoSosEnabled
       });
     } catch (err) {
       console.error('Get settings error:', err);
@@ -30,23 +31,25 @@ const settingsController = {
     const { shakeEnabled, powerTapThreshold, selectedTemplate, geofenceAutoSosEnabled } = req.body;
     
     try {
-      const shakeVal = shakeEnabled === true ? 1 : 0;
       const thresholdVal = powerTapThreshold !== undefined ? parseInt(powerTapThreshold, 10) : 5;
-      const templateVal = selectedTemplate || 'I am in danger. Please check my location. (Silent SOS)';
-      const geofenceVal = geofenceAutoSosEnabled === true ? 1 : 0;
+      const templateVal = selectedTemplate || 'I am in danger. Please check my location. (Lead City SOS)';
 
-      // Use INSERT OR REPLACE to update settings row dynamically
-      await dbQuery.run(
-        `INSERT OR REPLACE INTO user_settings (user_id, shake_enabled, power_tap_threshold, selected_template, geofence_auto_sos_enabled)
-         VALUES (?, ?, ?, ?, ?)`,
-        [req.userId, shakeVal, thresholdVal, templateVal, geofenceVal]
+      const settings = await Settings.findByIdAndUpdate(
+        req.userId,
+        {
+          shakeEnabled: !!shakeEnabled,
+          powerTapThreshold: thresholdVal,
+          selectedTemplate: templateVal,
+          geofenceAutoSosEnabled: !!geofenceAutoSosEnabled
+        },
+        { new: true, upsert: true }
       );
 
       res.json({
-        shakeEnabled: shakeVal === 1,
-        powerTapThreshold: thresholdVal,
-        selectedTemplate: templateVal,
-        geofenceAutoSosEnabled: geofenceVal === 1
+        shakeEnabled: settings.shakeEnabled,
+        powerTapThreshold: settings.powerTapThreshold,
+        selectedTemplate: settings.selectedTemplate,
+        geofenceAutoSosEnabled: settings.geofenceAutoSosEnabled
       });
     } catch (err) {
       console.error('Update settings error:', err);

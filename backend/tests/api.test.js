@@ -1,7 +1,7 @@
 const request = require('supertest');
 const app = require('../../server');
 const initializeDatabase = require('../db/init');
-const { dbQuery } = require('../config/db');
+const mongoose = require('mongoose');
 
 beforeAll(async () => {
   process.env.NODE_ENV = 'test';
@@ -9,7 +9,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await dbQuery.close();
+  await mongoose.connection.close();
 });
 
 describe('Silent SOS API Integration Tests', () => {
@@ -28,23 +28,36 @@ describe('Silent SOS API Integration Tests', () => {
   };
 
   describe('Authentication Endpoints', () => {
-    it('should successfully sign up a new user', async () => {
+    it('should successfully sign up a new user via OTP', async () => {
       const res = await request(app)
-        .post('/api/auth/signup')
+        .post('/api/auth/send-otp')
         .send(testUser);
 
-      expect(res.status).toBe(201);
-      expect(res.body).toHaveProperty('token');
-      expect(res.body.user).toHaveProperty('id');
-      expect(res.body.user.email).toBe(testUser.email);
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body).toHaveProperty('devOtp');
       
-      userToken = res.body.token;
-      userId = res.body.user.id;
+      const otpCode = res.body.devOtp;
+
+      const verifyRes = await request(app)
+        .post('/api/auth/verify-otp')
+        .send({
+          email: testUser.email,
+          code: otpCode
+        });
+
+      expect(verifyRes.status).toBe(201);
+      expect(verifyRes.body).toHaveProperty('token');
+      expect(verifyRes.body.user).toHaveProperty('id');
+      expect(verifyRes.body.user.email).toBe(testUser.email);
+      
+      userToken = verifyRes.body.token;
+      userId = verifyRes.body.user.id;
     });
 
     it('should fail signup with duplicate email', async () => {
       const res = await request(app)
-        .post('/api/auth/signup')
+        .post('/api/auth/send-otp')
         .send(testUser);
 
       expect(res.status).toBe(400);
