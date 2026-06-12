@@ -42,7 +42,7 @@ const settingsController = {
           selectedTemplate: templateVal,
           geofenceAutoSosEnabled: !!geofenceAutoSosEnabled
         },
-        { new: true, upsert: true }
+        { returnDocument: 'after', upsert: true }
       );
 
       res.json({

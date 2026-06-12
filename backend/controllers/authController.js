@@ -143,7 +143,7 @@ const authController = {
       await Session.findOneAndUpdate(
         { _id: token },
         { userId },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
 
       // Remove from pending registrations cache
@@ -183,7 +183,7 @@ const authController = {
       await Session.findOneAndUpdate(
         { _id: token },
         { userId: user.id },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
 
       res.json({ user: formatUser(user), token });
