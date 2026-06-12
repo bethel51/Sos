@@ -138,12 +138,13 @@ const authController = {
         selectedTemplate: 'I am in danger. Please check my location. (Lead City SOS)'
       });
 
-      // Create JWT session
-      const token = jwt.sign({ userId }, JWT_SECRET, { expiresIn: '7d' });
-      await Session.create({
-        _id: token,
-        userId
-      });
+      // Create JWT session with unique salt to prevent duplicate key errors
+      const token = jwt.sign({ userId, salt: Math.random().toString() }, JWT_SECRET, { expiresIn: '7d' });
+      await Session.findOneAndUpdate(
+        { _id: token },
+        { userId },
+        { upsert: true, new: true }
+      );
 
       // Remove from pending registrations cache
       pendingRegistrations.delete(email.toLowerCase());
@@ -177,12 +178,13 @@ const authController = {
         return res.status(403).json({ error: 'This account has been suspended.' });
       }
 
-      // Create JWT session
-      const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-      await Session.create({
-        _id: token,
-        userId: user.id
-      });
+      // Create JWT session with unique salt to prevent duplicate key errors
+      const token = jwt.sign({ userId: user.id, salt: Math.random().toString() }, JWT_SECRET, { expiresIn: '7d' });
+      await Session.findOneAndUpdate(
+        { _id: token },
+        { userId: user.id },
+        { upsert: true, new: true }
+      );
 
       res.json({ user: formatUser(user), token });
     } catch (err) {
