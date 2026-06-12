@@ -32,6 +32,14 @@ jobs:
         NODE_ENV: test
         JWT_SECRET: testing_jwt_secret_token_123_abc
         ADMIN_TOKEN: admin_secret_token
+        MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+        SMTP_HOST: smtp-relay.brevo.com
+        SMTP_PORT: 587
+        SMTP_USER: ${{ secrets.SMTP_USER }}
+        SMTP_PASS: ${{ secrets.SMTP_PASS }}
+        BREVO_SENDER: SilentSOS
+        CORS_ORIGIN: "*"
 
     - name: Run production build
       run: npm run build
