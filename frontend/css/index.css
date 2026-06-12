@@ -821,104 +821,124 @@ input:focus, select:focus, textarea:focus {
    Responsive Mobile Adjustments (Media Queries for Screen Width <= 768px)
    ========================================================================== */
 @media (max-width: 768px) {
-  /* Global Layout Constraints */
-  body, #root, .app-root-container {
-    height: auto;
-    min-height: 100vh;
-    overflow: auto;
+  /* Global Layout Constraints to prevent height collapsing */
+  html, body, #root, .app-root-container {
+    height: 100vh !important;
+    min-height: 100vh !important;
+    overflow: hidden !important;
   }
 
   .workspace-container {
-    flex-direction: column;
-    overflow: visible;
-    height: auto;
+    flex-direction: column !important;
+    height: calc(100vh - 60px) !important;
+    overflow: hidden !important;
   }
 
-  /* Compact Responsive Header */
+  /* Compact Responsive Header - keeps layout thin and neat */
   .app-global-header {
-    height: auto;
-    padding: 12px 16px;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
+    height: 60px !important;
+    padding: 8px 16px !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 0 !important;
   }
 
   .logo-container {
-    justify-content: space-between;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+
+  .logo-icon {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 16px !important;
+  }
+
+  .logo-text h1 {
+    font-size: 14px !important;
+  }
+
+  .logo-tagline {
+    display: none !important;
   }
 
   .status-ribbon {
-    align-self: flex-start;
+    display: none !important; /* Hide to save space on mobile header */
   }
 
   .global-view-nav {
-    overflow-x: auto;
-    white-space: nowrap;
-    display: flex;
-    justify-content: flex-start;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .global-view-nav::-webkit-scrollbar {
-    display: none;
+    display: flex !important;
+    gap: 2px !important;
+    background: #e2e8f0 !important;
+    padding: 2px !important;
+    border-radius: 8px !important;
   }
 
   .view-tab-btn {
-    flex-shrink: 0;
+    padding: 6px 10px !important;
+    font-size: 11px !important;
+    border-radius: 6px !important;
+    gap: 4px !important;
+  }
+
+  .view-tab-btn span {
+    display: none; /* Hide tab labels on extra small screens to save space */
+  }
+
+  .sim-toggle-btn, .theme-toggle-btn {
+    display: none !important; /* Hide simulator controls on real phones */
   }
 
   /* Environment Simulator Sidebar Overlay Drawer */
   .simulator-sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 280px;
-    height: 100vh;
-    z-index: 1000;
-    box-shadow: var(--shadow-premium);
-    transform: translateX(0);
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    border-right: 1px solid var(--border-glass);
-    border-bottom: none;
+    display: none !important; /* Never show simulator on real phones */
   }
 
   .viewport-canvas {
-    padding: 10px;
-    width: 100%;
-    min-height: calc(100vh - 150px);
-    overflow: visible;
+    padding: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: unset !important;
+    overflow: hidden !important;
+    background-color: #ffffff !important;
   }
 
   /* Flatten Phone Mockup Bezel on Mobile Viewports */
   .phone-mockup-frame {
-    width: 100%;
-    height: 100%;
-    max-width: none;
-    max-height: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    flex: 1;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 !important;
   }
 
   .phone-bezel {
     width: 100% !important;
     height: 100% !important;
-    min-height: calc(100vh - 180px);
+    min-height: unset !important;
     border: none !important;
     border-radius: 0 !important;
     padding: 0 !important;
     box-shadow: none !important;
     background: transparent !important;
+    display: flex !important;
+    flex-direction: column !important;
   }
 
   .phone-screen {
     border: none !important;
     border-radius: 0 !important;
-    display: flex;
-    flex-direction: column;
-    height: 100%;
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    width: 100% !important;
+    flex: 1 !important;
   }
 
   .phone-island {
@@ -929,21 +949,23 @@ input:focus, select:focus, textarea:focus {
     display: none !important;
   }
 
-  /* Remove limiting heights and allow components to scroll natively */
+  /* Screen body should scroll independently */
   .screen-body {
-    overflow-y: visible;
-    padding: 16px;
-    height: auto;
+    overflow-y: auto !important;
+    padding: 20px !important;
+    height: 100% !important;
+    flex: 1 !important;
   }
 
   /* Stack Dashboard Panels */
   .dashboard-panel {
-    width: 100%;
-    border-radius: 0;
-    border: none;
-    padding: 12px;
-    box-shadow: none;
-    gap: 15px;
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 0 !important;
+    border: none !important;
+    padding: 12px !important;
+    box-shadow: none !important;
+    overflow-y: auto !important;
   }
 
   .dashboard-layout {
@@ -952,7 +974,7 @@ input:focus, select:focus, textarea:focus {
   }
 
   .map-card {
-    height: 300px;
+    height: 300px !important;
   }
 
   #contact-map {
@@ -965,10 +987,10 @@ input:focus, select:focus, textarea:focus {
 
   /* Responsive and Scrollable Tables */
   .admin-table {
-    display: block;
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    display: block !important;
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
   }
 }
 

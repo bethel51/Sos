@@ -64,8 +64,9 @@ const notificationService = {
     }
 
     try {
+      const fromEmail = process.env.SMTP_FROM || smtpUser || 'no-reply@silentsos.com';
       const info = await mailTransporter.sendMail({
-        from: '"Silent SOS Alert System" <no-reply@silentsos.com>',
+        from: `"Silent SOS Alert System" <${fromEmail}>`,
         to,
         subject,
         text: bodyText || 'Silent SOS Alert triggered.',
