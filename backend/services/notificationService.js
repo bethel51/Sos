@@ -58,6 +58,65 @@ if (smtpUser && smtpPass) {
 
 const notificationService = {
   async sendEmail({ to, subject, bodyHtml, bodyText }) {
+    const brevoApiKey = process.env.BREVO_API_KEY;
+    if (brevoApiKey) {
+      try {
+        const https = require('https');
+        const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'ad0edf001@smtp-brevo.com';
+        const postData = JSON.stringify({
+          sender: {
+            name: 'Silent SOS Alert System',
+            email: fromEmail
+          },
+          to: [{ email: to }],
+          subject: subject,
+          htmlContent: bodyHtml || `<p>${bodyText}</p>`,
+          textContent: bodyText || 'Silent SOS Alert triggered.'
+        });
+
+        const options = {
+          hostname: 'api.brevo.com',
+          port: 443,
+          path: '/v3/smtp/email',
+          method: 'POST',
+          headers: {
+            'accept': 'application/json',
+            'content-type': 'application/json',
+            'api-key': brevoApiKey,
+            'content-length': Buffer.byteLength(postData)
+          }
+        };
+
+        const response = await new Promise((resolve, reject) => {
+          const req = https.request(options, (res) => {
+            let body = '';
+            res.on('data', (chunk) => body += chunk);
+            res.on('end', () => {
+              try {
+                resolve({ statusCode: res.statusCode, data: JSON.parse(body) });
+              } catch (e) {
+                resolve({ statusCode: res.statusCode, raw: body });
+              }
+            });
+          });
+          req.on('error', (err) => reject(err));
+          req.write(postData);
+          req.end();
+        });
+
+        if (response.statusCode === 201 || response.statusCode === 200 || (response.data && response.data.messageId)) {
+          console.log(`Email sent successfully via Brevo HTTP API to ${to}. Message ID: ${response.data.messageId}`);
+          return response.data;
+        } else {
+          console.error(`Brevo HTTP API Email failed to ${to}:`, response);
+          throw new Error(JSON.stringify(response.data || response.raw));
+        }
+      } catch (err) {
+        console.error(`Brevo HTTP API Email dispatch failed to ${to}:`, err.message || err);
+        console.log('Falling back to SMTP...');
+      }
+    }
+
     if (!mailTransporter) {
       console.log(`[Email Mock] Transporter not ready. Sending to: ${to} | Subject: ${subject}`);
       return;
@@ -73,15 +132,10 @@ const notificationService = {
         html: bodyHtml
       });
 
-      console.log(`Email sent successfully to ${to}. Message ID: ${info.messageId}`);
-      const previewUrl = nodemailer.getTestMessageUrl(info);
-      if (previewUrl) {
-        console.log(`Ethereal Email Preview URL: ${previewUrl}`);
-      }
+      console.log(`Email sent successfully via SMTP to ${to}. Message ID: ${info.messageId}`);
       return info;
     } catch (err) {
       console.error(`SMTP Email dispatch failed to ${to}:`, err.message || err);
-      console.log(`[EMAIL FALLBACK] Because the SMTP server rejected the connection (e.g., Unauthorized IP address or invalid credentials), we bypass this block so the user can continue smoothly.`);
       console.log(`[EMAIL FALLBACK] Mock email sent to: ${to} | Subject: ${subject}`);
       return { messageId: 'fallback-mock-id-' + Date.now(), mock: true, accepted: [to] };
     }
