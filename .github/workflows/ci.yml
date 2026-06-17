@@ -10,6 +10,12 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -32,7 +38,8 @@ jobs:
         NODE_ENV: test
         JWT_SECRET: testing_jwt_secret_token_123_abc
         ADMIN_TOKEN: admin_secret_token
-        MONGODB_URI: "${{ secrets.MONGODB_URI }}"
+        # Fallback to local MongoDB service if secret MONGODB_URI is not provided
+        MONGODB_URI: ${{ secrets.MONGODB_URI || 'mongodb://localhost:27017/leadcity-sos' }}
         BREVO_API_KEY: "${{ secrets.BREVO_API_KEY }}"
         SMTP_HOST: smtp-relay.brevo.com
         SMTP_PORT: 587
