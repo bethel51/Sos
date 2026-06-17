@@ -46,9 +46,13 @@ const authController = {
         return res.status(400).json({ error: 'Phone number is already registered.' });
       }
 
+      const isDevMode = process.env.NODE_ENV?.toLowerCase() !== 'production' || process.env.SHOW_OTP_IN_RESPONSE === 'true';
+
       // Generate 4-digit verification code
       const code = Math.floor(1000 + Math.random() * 9000).toString();
-      console.log(`\n====================================\n[OTP DEBUG] SIGNUP CODE FOR ${email} IS: ${code}\n====================================\n`);
+      if (isDevMode) {
+        console.log(`\n====================================\n[OTP DEBUG] SIGNUP CODE FOR ${email} IS: ${code}\n====================================\n`);
+      }
 
       // Store in memory map
       pendingRegistrations.set(email.toLowerCase(), {
@@ -80,9 +84,6 @@ const authController = {
         `
       });
 
-      // In development/local mode, return the OTP code in the response for easy testing
-      // (since SMTP may not be whitelisted for local IPs)
-      const isDevMode = process.env.NODE_ENV !== 'production' || process.env.SHOW_OTP_IN_RESPONSE === 'true';
       res.status(200).json({
         success: true,
         message: 'OTP sent to your email.',
@@ -250,8 +251,12 @@ const authController = {
         return res.status(404).json({ error: 'Email address not registered.' });
       }
 
+      const isDevMode = process.env.NODE_ENV?.toLowerCase() !== 'production' || process.env.SHOW_OTP_IN_RESPONSE === 'true';
+
       const code = Math.floor(1000 + Math.random() * 9000).toString();
-      console.log(`\n====================================\n[OTP DEBUG] PASSWORD RESET CODE FOR ${email} IS: ${code}\n====================================\n`);
+      if (isDevMode) {
+        console.log(`\n====================================\n[OTP DEBUG] PASSWORD RESET CODE FOR ${email} IS: ${code}\n====================================\n`);
+      }
       pendingPasswordResets.set(email.toLowerCase(), {
         code,
         expiresAt: Date.now() + 10 * 60 * 1000 // 10 mins
@@ -275,7 +280,6 @@ const authController = {
         `
       });
 
-      const isDevMode = process.env.NODE_ENV !== 'production' || process.env.SHOW_OTP_IN_RESPONSE === 'true';
       res.status(200).json({
         success: true,
         message: 'Password reset code sent.',

@@ -37,7 +37,7 @@ const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 
 // Enforce HTTPS in production
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV?.toLowerCase() === 'production') {
   app.use((req, res, next) => {
     if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
       return next();
@@ -51,7 +51,7 @@ const morganStream = {
   write: (message) => logger.http(message.trim())
 };
 app.use(morgan(
-  process.env.NODE_ENV === 'production' ? 'combined' : 'dev',
+  process.env.NODE_ENV?.toLowerCase() === 'production' ? 'combined' : 'dev',
   { stream: morganStream }
 ));
 
@@ -164,7 +164,7 @@ app.get('*', (req, res) => {
 // Global Error Handler Middleware
 app.use((err, req, res, next) => {
   logger.error(`Unhandled error on ${req.method} ${req.url}: ${err.message}`, { error: err, stack: err.stack });
-  const isProduction = process.env.NODE_ENV === 'production';
+  const isProduction = process.env.NODE_ENV?.toLowerCase() === 'production';
   res.status(err.status || 500).json({
     error: isProduction ? 'Internal Server Error' : err.message,
     ...(isProduction ? {} : { stack: err.stack })
@@ -172,7 +172,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start HTTP Server
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV?.toLowerCase() !== 'test') {
   server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT} (NODE_ENV: ${process.env.NODE_ENV || 'development'})`);
   });

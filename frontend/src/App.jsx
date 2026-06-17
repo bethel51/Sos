@@ -10,14 +10,48 @@ const getSocket = () => {
 };
 
 export default function App() {
-  // Global Workspace View: 'user-app', 'contact-dashboard', 'admin-panel'
-  const [workspaceView, setWorkspaceView] = useState('user-app');
+  const getInitialView = () => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      if (hash === '#/admin') return 'admin-panel';
+      if (hash === '#/contact') return 'contact-dashboard';
+      if (hash === '#/user') return 'user-app';
+    }
+    return 'portal-gate';
+  };
+
+  // Global Workspace View: 'portal-gate', 'user-app', 'contact-dashboard', 'admin-panel'
+  const [workspaceView, setWorkspaceView] = useState(getInitialView);
   const [showSimulator, setShowSimulator] = useState(
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
   );
   const [theme, setTheme] = useState('dark');
   const [toasts, setToasts] = useState([]);
   const [isOnline, setIsOnline] = useState(true);
+
+  const navigateTo = (view, hash) => {
+    if (typeof window !== 'undefined') {
+      window.location.hash = hash;
+    }
+    setWorkspaceView(view);
+  };
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (hash === '#/admin') {
+        setWorkspaceView('admin-panel');
+      } else if (hash === '#/contact') {
+        setWorkspaceView('contact-dashboard');
+      } else if (hash === '#/user') {
+        setWorkspaceView('user-app');
+      } else {
+        setWorkspaceView('portal-gate');
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   // Auth State
   const [currentUser, setCurrentUser] = useState(null);
@@ -807,7 +841,7 @@ export default function App() {
 
       {/* Main Header bar */}
       <header className="app-global-header">
-        <div className="logo-container">
+        <div className="logo-container" style={{ cursor: 'pointer' }} onClick={() => navigateTo('portal-gate', '#/')}>
           <div className="logo-icon">🛡️</div>
           <div className="logo-text">
             <h1>Lead City SOS</h1>
@@ -816,35 +850,39 @@ export default function App() {
         </div>
 
         {/* geofence state ribbon */}
-        <div className={`status-ribbon ${isOnline ? '' : 'offline'}`}>
-          <span className="status-dot"></span>
-          <span className="status-text">{isOnline ? 'System Monitoring Active' : 'OFFLINE: SMS Fallback Active'}</span>
-        </div>
+        {workspaceView !== 'portal-gate' && (
+          <div className={`status-ribbon ${isOnline ? '' : 'offline'}`}>
+            <span className="status-dot"></span>
+            <span className="status-text">{isOnline ? 'System Monitoring Active' : 'OFFLINE: SMS Fallback Active'}</span>
+          </div>
+        )}
 
-        {/* view switcher controls */}
+        {/* Header Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button
-            onClick={() => setShowSimulator(prev => !prev)}
-            className="sim-toggle-btn"
-            title="Toggle Simulator Panel"
-            style={{ 
-              height: '38px', 
-              padding: '0 12px',
-              borderRadius: '10px', 
-              background: showSimulator ? 'var(--accent-blue)' : 'rgba(37, 99, 235, 0.1)', 
-              border: '1px solid var(--accent-blue)', 
-              color: showSimulator ? '#ffffff' : 'var(--accent-blue)', 
-              cursor: 'pointer',
-              fontWeight: '600',
-              fontSize: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              transition: 'var(--transition-fast)'
-            }}
-          >
-            🛠️ <span>{showSimulator ? 'Hide Controls' : 'Controls'}</span>
-          </button>
+          {workspaceView === 'user-app' && (
+            <button
+              onClick={() => setShowSimulator(prev => !prev)}
+              className="sim-toggle-btn"
+              title="Toggle Simulator Panel"
+              style={{ 
+                height: '38px', 
+                padding: '0 12px',
+                borderRadius: '10px', 
+                background: showSimulator ? 'var(--accent-blue)' : 'rgba(37, 99, 235, 0.1)', 
+                border: '1px solid var(--accent-blue)', 
+                color: showSimulator ? '#ffffff' : 'var(--accent-blue)', 
+                cursor: 'pointer',
+                fontWeight: '600',
+                fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'var(--transition-fast)'
+              }}
+            >
+              🛠️ <span>{showSimulator ? 'Hide Controls' : 'Controls'}</span>
+            </button>
+          )}
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             className="theme-toggle-btn"
@@ -853,17 +891,29 @@ export default function App() {
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
           
-          <nav className="global-view-nav">
-            <button className={`view-tab-btn ${workspaceView === 'user-app' ? 'active' : ''}`} onClick={() => setWorkspaceView('user-app')}>
-              📱 <span>User Mobile App</span>
+          {workspaceView !== 'portal-gate' && (
+            <button
+              onClick={() => navigateTo('portal-gate', '#/')}
+              className="portal-back-btn"
+              style={{
+                height: '38px',
+                padding: '0 12px',
+                borderRadius: '10px',
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid #ef4444',
+                color: '#ef4444',
+                cursor: 'pointer',
+                fontWeight: '600',
+                fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'var(--transition-fast)'
+              }}
+            >
+              🏠 <span>Exit to Portal</span>
             </button>
-            <button className={`view-tab-btn ${workspaceView === 'contact-dashboard' ? 'active' : ''}`} onClick={() => setWorkspaceView('contact-dashboard')}>
-              📻 <span>Contact Console</span>
-            </button>
-            <button className={`view-tab-btn ${workspaceView === 'admin-panel' ? 'active' : ''}`} onClick={() => setWorkspaceView('admin-panel')}>
-              🛡️ <span>Admin Center</span>
-            </button>
-          </nav>
+          )}
         </div>
       </header>
 
@@ -871,7 +921,7 @@ export default function App() {
       <main className="workspace-container">
         
         {/* LEFT SIMULATOR CONTROL BAR */}
-        {showSimulator && (
+        {showSimulator && workspaceView === 'user-app' && (
           <aside className="simulator-sidebar">
             <div className="sidebar-header">
               ⚡ <h2>Environment Simulator</h2>
@@ -941,6 +991,43 @@ export default function App() {
 
         {/* CENTRAL VIEW CANVAS */}
         <section className="viewport-canvas">
+
+          {/* VIEW 0: PORTAL GATE (LANDING PAGE) */}
+          {workspaceView === 'portal-gate' && (
+            <div className="portal-gate-wrapper">
+              <div className="portal-gate-header">
+                <h2>Lead City SOS Safety Gate</h2>
+                <p>Welcome to the Lead City University Emergency and Personal Safety Guardian App. Please select your target portal console below to proceed.</p>
+              </div>
+              <div className="portal-gate-grid">
+                
+                {/* User Mobile App Card */}
+                <div className="portal-gate-card" onClick={() => navigateTo('user-app', '#/user')}>
+                  <div className="portal-gate-icon">📱</div>
+                  <h3>Student Safety Mobile App</h3>
+                  <p>Access your personal safety dashboard, set safety timers, manage emergency responders, and trigger distress alerts.</p>
+                  <button className="portal-gate-btn">Enter Mobile Portal</button>
+                </div>
+
+                {/* Contact Console Card */}
+                <div className="portal-gate-card" onClick={() => navigateTo('contact-dashboard', '#/contact')}>
+                  <div className="portal-gate-icon">📻</div>
+                  <h3>Emergency Contact Console</h3>
+                  <p>Authorized responder portal to monitor live tracking feeds, view active distress alerts, and access safety profiles.</p>
+                  <button className="portal-gate-btn">Enter Responder Portal</button>
+                </div>
+
+                {/* Admin Center Card */}
+                <div className="portal-gate-card" onClick={() => navigateTo('admin-panel', '#/admin')}>
+                  <div className="portal-gate-icon">🛡️</div>
+                  <h3>Command & Control Center</h3>
+                  <p>System administrators command panel to manage users, view security histories, manage safe zones, and review stats.</p>
+                  <button className="portal-gate-btn">Enter Admin Portal</button>
+                </div>
+
+              </div>
+            </div>
+          )}
           
           {/* VIEW 1: USER APP (MOBILE PHONE FRAME) */}
           {workspaceView === 'user-app' && (

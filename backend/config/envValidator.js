@@ -1,7 +1,7 @@
 const logger = require('./logger');
 
 function validateEnv() {
-  const isProduction = process.env.NODE_ENV === 'production';
+  const isProduction = process.env.NODE_ENV?.toLowerCase() === 'production';
 
   const requiredKeys = ['JWT_SECRET', 'ADMIN_TOKEN', 'MONGODB_URI'];
   const defaultValues = {

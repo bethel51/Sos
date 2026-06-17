@@ -6,6 +6,8 @@ const mongoose = require('mongoose');
 beforeAll(async () => {
   process.env.NODE_ENV = 'test';
   await initializeDatabase();
+  const Incident = require('../models/incident');
+  await Incident.updateMany({ isActive: true }, { isActive: false });
 });
 
 afterAll(async () => {

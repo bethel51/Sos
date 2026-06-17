@@ -39,6 +39,9 @@ if (smtpUser && smtpPass) {
   });
   console.log(`SMTP Mail Transporter initialized for: ${smtpUser}`);
 } else {
+  if (process.env.NODE_ENV?.toLowerCase() === 'production') {
+    console.warn('\n====================================\n[WARNING] Running in production mode but SMTP credentials (SMTP_USER/SMTP_PASS) are missing. Email notifications will fall back to Ethereal/Mock!\n====================================\n');
+  }
   // Use ethereal.email test account fallback if no real credentials
   nodemailer.createTestAccount().then((account) => {
     mailTransporter = nodemailer.createTransport({

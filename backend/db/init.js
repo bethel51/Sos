@@ -21,7 +21,8 @@ async function initializeDatabase() {
   }
 
   // Import Seed/Existing Data from db.json if configured or in development
-  const shouldSeed = process.env.SEED_DB === 'true' || (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test');
+  const nodeEnv = process.env.NODE_ENV?.toLowerCase();
+  const shouldSeed = process.env.SEED_DB === 'true' || (nodeEnv !== 'production' && nodeEnv !== 'test');
   if (shouldSeed && fs.existsSync(DB_JSON_PATH)) {
     try {
       const data = fs.readFileSync(DB_JSON_PATH, 'utf8');
