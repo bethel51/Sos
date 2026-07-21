@@ -1,5 +1,3 @@
-const nodemailer = require('nodemailer');
-
 // Twilio SMS Dispatch configuration
 const twilioSid = process.env.TWILIO_ACCOUNT_SID;
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
@@ -15,49 +13,10 @@ if (twilioSid && twilioAuthToken) {
   }
 }
 
-// Brevo SMS Dispatch configuration
+// Brevo Email/SMS Dispatch configuration
 const brevoApiKey = process.env.BREVO_API_KEY;
 const brevoSender = process.env.BREVO_SENDER || 'SilentSOS';
 
-// Mail SMTP configuration
-const smtpHost = process.env.SMTP_HOST || 'smtp.ethereal.email';
-const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
-const smtpUser = process.env.SMTP_USER;
-const smtpPass = process.env.SMTP_PASS;
-
-let mailTransporter = null;
-
-if (smtpUser && smtpPass) {
-  mailTransporter = nodemailer.createTransport({
-    host: smtpHost,
-    port: smtpPort,
-    secure: smtpPort === 465,
-    auth: {
-      user: smtpUser,
-      pass: smtpPass
-    }
-  });
-  console.log(`SMTP Mail Transporter initialized for: ${smtpUser}`);
-} else {
-  if (process.env.NODE_ENV?.toLowerCase() === 'production') {
-    console.warn('\n====================================\n[WARNING] Running in production mode but SMTP credentials (SMTP_USER/SMTP_PASS) are missing. Email notifications will fall back to Ethereal/Mock!\n====================================\n');
-  }
-  // Use ethereal.email test account fallback if no real credentials
-  nodemailer.createTestAccount().then((account) => {
-    mailTransporter = nodemailer.createTransport({
-      host: 'smtp.ethereal.email',
-      port: 587,
-      secure: false,
-      auth: {
-        user: account.user,
-        pass: account.pass
-      }
-    });
-    console.log('Using Ethereal Mail fallback. Credentials:', account.user);
-  }).catch((err) => {
-    console.error('Ethereal mail fallback setup failed:', err);
-  });
-}
 
 const notificationService = {
   async sendEmail({ to, subject, bodyHtml, bodyText }) {
@@ -119,31 +78,11 @@ const notificationService = {
         if (err.message && err.message.includes('authorised_ips')) {
           console.warn('\n====================================\n[WARNING] Brevo API rejected the request due to an unauthorized IP address.\nIf you are running on Render or another cloud provider, you must add the IP address to your authorized list in the Brevo Dashboard under Security -> Authorized IPs:\nhttps://app.brevo.com/security/authorised_ips\n====================================\n');
         }
-        console.log('Falling back to SMTP...');
+        throw err;
       }
-    }
-
-    if (!mailTransporter) {
-      console.log(`[Email Mock] Transporter not ready. Sending to: ${to} | Subject: ${subject}`);
-      return;
-    }
-
-    try {
-      const fromEmail = process.env.SMTP_FROM || smtpUser || 'no-reply@silentsos.com';
-      const info = await mailTransporter.sendMail({
-        from: `"Silent SOS Alert System" <${fromEmail}>`,
-        to,
-        subject,
-        text: bodyText || 'Silent SOS Alert triggered.',
-        html: bodyHtml
-      });
-
-      console.log(`Email sent successfully via SMTP to ${to}. Message ID: ${info.messageId}`);
-      return info;
-    } catch (err) {
-      console.error(`SMTP Email dispatch failed to ${to}:`, err.message || err);
-      console.log(`[EMAIL FALLBACK] Mock email sent to: ${to} | Subject: ${subject}`);
-      return { messageId: 'fallback-mock-id-' + Date.now(), mock: true, accepted: [to] };
+    } else {
+      console.error('BREVO_API_KEY is not configured in environment variables.');
+      throw new Error('Email service is not configured (missing BREVO_API_KEY).');
     }
   },
 
