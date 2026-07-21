@@ -96,50 +96,58 @@ const sosController = {
       const dashboardLink = `${req.headers.origin || 'http://localhost:5173'}/`;
 
       for (const contact of contacts) {
-        // Send email
-        notificationService.sendEmail({
-          to: contact.email,
-          subject: `[EMERGENCY] Lead City SOS Alert: ${req.user.name} is in danger!`,
-          bodyText: `Hello ${contact.name},\n\n${req.user.name} has triggered a Lead City SOS alert (${type}).\nLast known location: ${locationLink}\n\nMonitor live telemetry at the dashboard: ${dashboardLink}`,
-          bodyHtml: `
-            <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ff4d4d; border-radius: 8px;">
-              <h2 style="color: #d93838; margin-top: 0;">⚠️ Emergency Lead City SOS Triggered</h2>
-              <p>Hello <strong>${contact.name}</strong>,</p>
-              <p>Your emergency safety contact <strong>${req.user.name}</strong> has triggered an SOS alert.</p>
-              <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
-                <tr>
-                  <td style="padding: 8px 0; font-weight: bold; width: 120px;">Trigger Type:</td>
-                  <td style="padding: 8px 0; color: #d93838; font-weight: bold;">${type || 'Unspecified Threat'}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; font-weight: bold;">Time:</td>
-                  <td style="padding: 8px 0;">${startTimeText} on ${dateText}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; font-weight: bold;">Location:</td>
-                  <td style="padding: 8px 0;"><a href="${locationLink}" style="color: #0066cc;">View on Google Maps</a></td>
-                </tr>
-              </table>
-              <div style="margin-top: 20px; text-align: center;">
-                <a href="${dashboardLink}" style="background-color: #d93838; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">
-                  Open Surveillance Dashboard
-                </a>
+        // Send email (safeguarded)
+        try {
+          await notificationService.sendEmail({
+            to: contact.email,
+            subject: `[EMERGENCY] Lead City SOS Alert: ${req.user.name} is in danger!`,
+            bodyText: `Hello ${contact.name},\n\n${req.user.name} has triggered a Lead City SOS alert (${type}).\nLast known location: ${locationLink}\n\nMonitor live telemetry at the dashboard: ${dashboardLink}`,
+            bodyHtml: `
+              <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ff4d4d; border-radius: 8px;">
+                <h2 style="color: #d93838; margin-top: 0;">⚠️ Emergency Lead City SOS Triggered</h2>
+                <p>Hello <strong>${contact.name}</strong>,</p>
+                <p>Your emergency safety contact <strong>${req.user.name}</strong> has triggered an SOS alert.</p>
+                <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
+                  <tr>
+                    <td style="padding: 8px 0; font-weight: bold; width: 120px;">Trigger Type:</td>
+                    <td style="padding: 8px 0; color: #d93838; font-weight: bold;">${type || 'Unspecified Threat'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; font-weight: bold;">Time:</td>
+                    <td style="padding: 8px 0;">${startTimeText} on ${dateText}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; font-weight: bold;">Location:</td>
+                    <td style="padding: 8px 0;"><a href="${locationLink}" style="color: #0066cc;">View on Google Maps</a></td>
+                  </tr>
+                </table>
+                <div style="margin-top: 20px; text-align: center;">
+                  <a href="${dashboardLink}" style="background-color: #d93838; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">
+                    Open Surveillance Dashboard
+                  </a>
+                </div>
               </div>
-            </div>
-          `
-        });
+            `
+          });
+        } catch (emailErr) {
+          console.error(`Email dispatch failed to contact ${contact.email} during SOS:`, emailErr.message || emailErr);
+        }
 
-        // Send SMS
-        notificationService.sendSMS({
-          to: contact.phone,
-          message: `Lead City SOS: ${req.user.name} is in danger (${type || 'Unspecified Threat'}). View live map: ${dashboardLink}`
-        });
+        // Send SMS (safeguarded)
+        try {
+          await notificationService.sendSMS({
+            to: contact.phone,
+            message: `Lead City SOS: ${req.user.name} is in danger (${type || 'Unspecified Threat'}). View live map: ${dashboardLink}`
+          });
+        } catch (smsErr) {
+          console.error(`SMS dispatch failed to contact ${contact.phone} during SOS:`, smsErr.message || smsErr);
+        }
       }
 
       res.status(201).json(fullIncidentObj);
     } catch (err) {
       console.error('Trigger SOS error:', err);
-      res.status(500).json({ error: 'Internal server error initiating SOS.' });
+      res.status(500).json({ error: err.message || 'Internal server error initiating SOS.' });
     }
   },
 
