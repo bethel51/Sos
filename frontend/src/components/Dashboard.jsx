@@ -8,7 +8,8 @@ export default function Dashboard({
   setScreenState,
   simLat,
   simLng,
-  batteryLevel
+  batteryLevel,
+  onLogout
 }) {
   const [pinInput, setPinInput] = useState('');
   const [showDisarmModal, setShowDisarmModal] = useState(false);
@@ -149,6 +150,18 @@ export default function Dashboard({
           <h3 style={{ fontSize: '18px', marginBottom: '6px' }}>Campus Safe Zones</h3>
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Monitor designated campus safe zones and automated route deviation alerts.</p>
         </div>
+
+        {/* User Account Sign Out Action Card */}
+        {currentUser && (
+          <div className="glass-card" onClick={onLogout} style={{ cursor: 'pointer', border: '1px solid rgba(220, 38, 38, 0.2)', background: 'rgba(220, 38, 38, 0.01)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <span style={{ fontSize: '24px' }}>🚪</span>
+              <span className="badge badge-live" style={{ background: 'rgba(220, 38, 38, 0.1)', color: 'var(--primary-red)' }}>SESSION</span>
+            </div>
+            <h3 style={{ fontSize: '18px', marginBottom: '6px' }}>Sign Out Account</h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Log out safely from your safety control center and clear local storage credentials.</p>
+          </div>
+        )}
       </div>
 
       {/* Disarm PIN Modal */}

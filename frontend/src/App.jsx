@@ -363,6 +363,7 @@ export default function App() {
             simLat={simLat}
             simLng={simLng}
             batteryLevel={batteryLevel}
+            onLogout={handleLogout}
           />
         )}
 
