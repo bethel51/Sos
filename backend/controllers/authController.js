@@ -72,33 +72,40 @@ const authController = {
         expiresAt: Date.now() + 15 * 60 * 1000 // 15 mins
       });
 
-      // Send Email via Brevo (Nodemailer)
+      // Send Email via Brevo HTTP API
       const notificationService = require('../services/notificationService');
-      await notificationService.sendEmail({
-        to: trimmedEmail,
-        subject: `Lead City SOS - Verification Code: ${code}`,
-        bodyText: `Your verification code is ${code}. Please enter this code to complete your account setup.`,
-        bodyHtml: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e4e6; border-radius: 8px; background-color: #06060c; color: #ffffff;">
-            <h2 style="color: #FFD700; text-align: center;">Lead City SOS Account Verification</h2>
-            <p>Hello,</p>
-            <p>Thank you for creating an account with Lead City SOS Safety App. Please use the following 4-digit verification code to secure and activate your account:</p>
-            <div style="background-color: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 15px; text-align: center; font-size: 28px; font-weight: bold; letter-spacing: 5px; color: #FFD700; margin: 20px 0;">
-              ${code}
+      try {
+        await notificationService.sendEmail({
+          to: trimmedEmail,
+          subject: `Lead City SOS - Verification Code: ${code}`,
+          bodyText: `Your verification code is ${code}. Please enter this code to complete your account setup.`,
+          bodyHtml: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e4e6; border-radius: 8px; background-color: #06060c; color: #ffffff;">
+              <h2 style="color: #FFD700; text-align: center;">Lead City SOS Account Verification</h2>
+              <p>Hello,</p>
+              <p>Thank you for creating an account with Lead City SOS Safety App. Please use the following 4-digit verification code to secure and activate your account:</p>
+              <div style="background-color: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 15px; text-align: center; font-size: 28px; font-weight: bold; letter-spacing: 5px; color: #FFD700; margin: 20px 0;">
+                ${code}
+              </div>
+              <p style="font-size: 12px; color: #888;">This code is valid for 15 minutes. If you did not request this code, please ignore this email.</p>
             </div>
-            <p style="font-size: 12px; color: #888;">This code is valid for 15 minutes. If you did not request this code, please ignore this email.</p>
-          </div>
-        `
-      });
+          `
+        });
+      } catch (emailErr) {
+        console.error('Email dispatch failed during signup:', emailErr.message || emailErr);
+        if (!isDevMode) {
+          throw emailErr;
+        }
+      }
 
       res.status(200).json({
         success: true,
-        message: 'OTP sent to your email.',
-        ...(isDevMode ? { devOtp: code, devNote: 'Email SMTP may be restricted. Use this code to verify.' } : {})
+        message: isDevMode ? 'OTP generated (Email delivery bypassed/failed).' : 'OTP sent to your email.',
+        ...(isDevMode ? { devOtp: code, devNote: 'Email delivery bypassed/failed. Use devOtp to verify.' } : {})
       });
     } catch (err) {
       console.error('Send OTP error:', err);
-      res.status(500).json({ error: 'Internal server error sending OTP.' });
+      res.status(500).json({ error: err.message || 'Internal server error sending OTP.' });
     }
   },
 
