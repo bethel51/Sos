@@ -311,6 +311,34 @@ export default function App() {
         showToast('Contact Deleted', 'Emergency responder removed.', 'info');
       });
   };
+  const handleAddZone = (zone) => {
+    fetch('/api/zones', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(zone)
+    })
+      .then(res => res.json())
+      .then(data => {
+        setSafeZones(prev => [...prev, data]);
+        showToast('Safe Zone Added', 'Geofence activated for this zone.', 'success');
+      })
+      .catch(err => showToast('Error', err.message, 'error'));
+  };
+
+  const handleDeleteZone = (zoneId) => {
+    fetch(`/api/zones/${zoneId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(() => {
+        setSafeZones(prev => prev.filter(z => (z.id || z._id) !== zoneId));
+        showToast('Safe Zone Removed', 'Geofence deactivated.', 'info');
+      })
+      .catch(err => showToast('Error', err.message, 'error'));
+  };
 
   return (
     <div id="root">
@@ -352,6 +380,8 @@ export default function App() {
             safeZones={safeZones} 
             simLat={simLat} 
             simLng={simLng} 
+            onAddZone={handleAddZone}
+            onDeleteZone={handleDeleteZone}
           />
         )}
 
