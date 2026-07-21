@@ -116,6 +116,9 @@ const notificationService = {
         }
       } catch (err) {
         console.error(`Brevo HTTP API Email dispatch failed to ${to}:`, err.message || err);
+        if (err.message && err.message.includes('authorised_ips')) {
+          console.warn('\n====================================\n[WARNING] Brevo API rejected the request due to an unauthorized IP address.\nIf you are running on Render or another cloud provider, you must add the IP address to your authorized list in the Brevo Dashboard under Security -> Authorized IPs:\nhttps://app.brevo.com/security/authorised_ips\n====================================\n');
+        }
         console.log('Falling back to SMTP...');
       }
     }

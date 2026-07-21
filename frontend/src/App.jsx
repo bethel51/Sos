@@ -128,6 +128,15 @@ export default function App() {
   const pathMarkerRef = useRef(null);
   const pathLineRef = useRef(null);
 
+  // Phase 1 Media Capture Refs
+  const audioRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const mockAudioIntervalRef = useRef(null);
+  const cameraStreamRef = useRef(null);
+  const cameraIntervalRef = useRef(null);
+  const mockImageIndexRef = useRef(0);
+  const isMediaRecordingRef = useRef(false);
+
   // Predefined coordinates for Lead City University Simulation
   const lcuRoutes = {
     stationary: [{ lat: 4.8156, lng: 7.0498 }],
@@ -161,6 +170,265 @@ export default function App() {
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 4000);
+  };
+
+  // --- PHASE 1: AUDIO COLLECTION ---
+  const startAudioRecording = async () => {
+    audioChunksRef.current = [];
+    
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const recorder = new MediaRecorder(stream);
+        audioRecorderRef.current = recorder;
+        
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+            
+            // Stream audio chunk in real-time via WebSocket
+            if (socketRef.current && currentUser) {
+              const reader = new FileReader();
+              reader.readAsDataURL(event.data);
+              reader.onloadend = () => {
+                const base64Chunk = reader.result;
+                socketRef.current.emit('audio_stream_chunk', {
+                  userId: currentUser.id,
+                  chunk: base64Chunk
+                });
+              };
+            }
+          }
+        };
+
+        recorder.onstop = async () => {
+          if (audioChunksRef.current.length === 0) return;
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+          
+          const reader = new FileReader();
+          reader.readAsDataURL(audioBlob);
+          reader.onloadend = async () => {
+            const base64Audio = reader.result;
+            await uploadEvidence({ audio: base64Audio });
+          };
+        };
+
+        // Pass 1000ms timeslice to trigger ondataavailable periodically
+        recorder.start(1000);
+      } else {
+        startMockAudio();
+      }
+    } catch (err) {
+      console.warn("Microphone access denied, using mock audio visualizer:", err);
+      startMockAudio();
+    }
+  };
+
+  const startMockAudio = () => {
+    if (mockAudioIntervalRef.current) clearInterval(mockAudioIntervalRef.current);
+    mockAudioIntervalRef.current = setInterval(() => {
+      if (socketRef.current && currentUser) {
+        // Emit tiny base64 chunk to simulate stream activity
+        socketRef.current.emit('audio_stream_chunk', {
+          userId: currentUser.id,
+          chunk: 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAAHAAEAQB8AAEAfAAABAAgAZGF0YQQAAAAAAA=='
+        });
+      }
+    }, 1000);
+  };
+
+  const stopAudioRecording = () => {
+    if (mockAudioIntervalRef.current) {
+      clearInterval(mockAudioIntervalRef.current);
+      mockAudioIntervalRef.current = null;
+    }
+    if (audioRecorderRef.current && audioRecorderRef.current.state !== 'inactive') {
+      audioRecorderRef.current.stop();
+      audioRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      audioRecorderRef.current = null;
+    }
+  };
+
+  // --- PHASE 1: CAMERA IMAGE CAPTURE ---
+  const startCameraCapture = async () => {
+    stopCameraCapture();
+    
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'user' } 
+        });
+        cameraStreamRef.current = stream;
+        
+        const preview = document.getElementById('active-sos-cam-preview');
+        if (preview) {
+          preview.srcObject = stream;
+          preview.play().catch(e => console.warn("Auto-play preview failed", e));
+        }
+      } catch (err) {
+        console.warn("Could not acquire persistent camera stream:", err);
+      }
+    }
+    
+    // First immediate capture
+    captureSnapshot();
+    
+    // Setup recurring capture every 30 seconds
+    cameraIntervalRef.current = setInterval(() => {
+      captureSnapshot();
+    }, 30000);
+  };
+
+  const stopCameraCapture = () => {
+    if (cameraIntervalRef.current) {
+      clearInterval(cameraIntervalRef.current);
+      cameraIntervalRef.current = null;
+    }
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+    }
+  };
+
+  const captureSnapshot = async () => {
+    const timeStr = new Date().toLocaleTimeString();
+    
+    if (cameraStreamRef.current) {
+      try {
+        const video = document.createElement('video');
+        video.srcObject = cameraStreamRef.current;
+        await video.play();
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        const imgData = canvas.toDataURL('image/jpeg');
+        const isFront = mockImageIndexRef.current % 2 === 0;
+        await saveCapturedImage(imgData, isFront ? 'front' : 'back', timeStr);
+        mockImageIndexRef.current++;
+        return;
+      } catch (err) {
+        console.warn("Failed drawing snapshot from persistent stream, trying fallback:", err);
+      }
+    }
+    
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'user' } 
+        });
+        
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        await video.play();
+        
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        const imgData = canvas.toDataURL('image/jpeg');
+        await saveCapturedImage(imgData, 'front', timeStr);
+        
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      } catch (err) {
+        console.warn("Camera hardware unavailable or denied. Generating mock snapshot:", err);
+      }
+    }
+    
+    generateMockSnapshot(timeStr);
+  };
+
+  const generateMockSnapshot = (timeStr) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 400;
+    canvas.height = 300;
+    const ctx = canvas.getContext('2d');
+    
+    const isFront = mockImageIndexRef.current % 2 === 0;
+    const modeLabel = isFront ? 'FRONT CAMERA' : 'BACK CAMERA';
+    
+    const grad = ctx.createLinearGradient(0, 0, 0, 300);
+    if (isFront) {
+      grad.addColorStop(0, '#111122');
+      grad.addColorStop(1, '#ff2e63');
+    } else {
+      grad.addColorStop(0, '#050510');
+      grad.addColorStop(1, '#08d9d6');
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 400, 300);
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.beginPath();
+    ctx.arc(200, 150, 60, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(200, 260, 100, 0, Math.PI, true);
+    ctx.fill();
+
+    for (let i = 0; i < 2000; i++) {
+      const x = Math.random() * 400;
+      const y = Math.random() * 300;
+      ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.08})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 12px "Outfit", sans-serif';
+    ctx.fillText(`SILENT SOS SECURITY STREAM - ${modeLabel}`, 15, 25);
+    
+    ctx.font = '10px "Inter", sans-serif';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.fillText(`GPS Coordinates: ${simLat.toFixed(5)}, ${simLng.toFixed(5)}`, 15, 265);
+    ctx.fillText(`Captured: ${timeStr} | Environment Threat High`, 15, 280);
+    
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(200, 130); ctx.lineTo(200, 170);
+    ctx.moveTo(180, 150); ctx.lineTo(220, 150);
+    ctx.stroke();
+
+    const imgData = canvas.toDataURL('image/jpeg');
+    saveCapturedImage(imgData, isFront ? 'front' : 'back', timeStr);
+    mockImageIndexRef.current++;
+  };
+
+  const saveCapturedImage = async (dataUrl, source, timestamp) => {
+    const photoObj = {
+      id: 'photo_' + Date.now(),
+      src: dataUrl,
+      source: source,
+      timestamp: timestamp
+    };
+    await uploadEvidence({ photo: photoObj });
+  };
+
+  const uploadEvidence = async (payload) => {
+    try {
+      const response = await fetch('/api/sos/evidence', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (response.ok) {
+        const activeInc = await response.json();
+        setActiveIncident(activeInc);
+      }
+    } catch (err) {
+      console.error('Offline/failed uploading evidence to server:', err);
+    }
   };
 
   // Setup WebSockets
@@ -331,6 +599,31 @@ export default function App() {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     };
   }, [safetyTimerActive]);
+
+  // Manage background media recording during active SOS
+  useEffect(() => {
+    if (activeIncident) {
+      if (!isMediaRecordingRef.current) {
+        isMediaRecordingRef.current = true;
+        startAudioRecording();
+        startCameraCapture();
+      }
+    } else {
+      if (isMediaRecordingRef.current) {
+        isMediaRecordingRef.current = false;
+        stopAudioRecording();
+        stopCameraCapture();
+      }
+    }
+
+    return () => {
+      if (!activeIncident && isMediaRecordingRef.current) {
+        isMediaRecordingRef.current = false;
+        stopAudioRecording();
+        stopCameraCapture();
+      }
+    };
+  }, [activeIncident]);
 
   // Leaflet map setup for User Geofences / Safe Zones
   useEffect(() => {
@@ -1569,6 +1862,19 @@ export default function App() {
                     {screenState === 'active-sos' && (
                       <div className="active-sos-emergency-screen">
                         <div className="sos-live-badge">🔴 LIVE</div>
+
+                        {/* Live camera stream preview element */}
+                        <div style={{ margin: '15px 0', position: 'relative', borderRadius: '12px', overflow: 'hidden', width: '140px', height: '140px', border: '3px solid rgba(239, 68, 68, 0.4)', boxShadow: '0 8px 16px rgba(0,0,0,0.2)' }}>
+                          <video 
+                            id="active-sos-cam-preview" 
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', background: '#000' }}
+                            autoPlay 
+                            playsInline 
+                            muted
+                          ></video>
+                          <div style={{ position: 'absolute', top: '5px', left: '5px', background: 'rgba(239, 68, 68, 0.8)', color: '#fff', fontSize: '8px', padding: '2px 4px', borderRadius: '4px', fontWeight: 'bold', letterSpacing: '0.05em' }}>CAM</div>
+                        </div>
+
                         <div className="sos-active-icon">🚨</div>
                         <h2 className="sos-active-title">SOS Mode Active</h2>
                         <p className="sos-active-desc">Live telemetry streaming to university command center and all emergency contacts.</p>
