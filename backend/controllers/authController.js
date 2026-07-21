@@ -38,8 +38,8 @@ const authController = {
     }
 
     try {
-      const trimmedEmail = email.trim();
-      const trimmedPhone = phone.trim();
+      const trimmedEmail = typeof email === 'string' ? email.trim() : '';
+      const trimmedPhone = typeof phone === 'string' ? phone.trim() : '';
 
       // Check for existing email
       const existingEmail = await User.findOne({ email: new RegExp(`^${escapeRegExp(trimmedEmail)}$`, 'i') });
@@ -110,7 +110,7 @@ const authController = {
     }
 
     try {
-      const trimmedEmail = email.trim();
+      const trimmedEmail = typeof email === 'string' ? email.trim() : '';
       const pending = pendingRegistrations.get(trimmedEmail.toLowerCase());
       if (!pending) {
         return res.status(400).json({ error: 'No pending registration request found for this email. Please submit the form again.' });
@@ -173,7 +173,7 @@ const authController = {
     }
 
     try {
-      const trimmedEmail = email.trim();
+      const trimmedEmail = typeof email === 'string' ? email.trim() : '';
       const user = await User.findOne({ email: new RegExp(`^${escapeRegExp(trimmedEmail)}$`, 'i') });
       if (!user) {
         return res.status(400).json({ error: 'User not found.' });
@@ -255,7 +255,7 @@ const authController = {
     }
 
     try {
-      const trimmedEmail = email.trim();
+      const trimmedEmail = typeof email === 'string' ? email.trim() : '';
       const user = await User.findOne({ email: new RegExp(`^${escapeRegExp(trimmedEmail)}$`, 'i') });
       if (!user) {
         return res.status(404).json({ error: 'Email address not registered.' });
@@ -309,7 +309,7 @@ const authController = {
     }
 
     try {
-      const trimmedEmail = email.trim();
+      const trimmedEmail = typeof email === 'string' ? email.trim() : '';
       const user = await User.findOne({ email: new RegExp(`^${escapeRegExp(trimmedEmail)}$`, 'i') });
       if (!user) {
         return res.status(404).json({ error: 'Email address not registered.' });

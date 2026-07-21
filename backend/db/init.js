@@ -22,7 +22,8 @@ async function initializeDatabase() {
     while (retries > 0) {
       try {
         await mongoose.connect(MONGODB_URI, {
-          serverSelectionTimeoutMS: 5000
+          serverSelectionTimeoutMS: 5000,
+          family: 4 // Force IPv4 to resolve DNS resolution issues on hosting platforms
         });
         console.log('Successfully connected to MongoDB.');
         break;
