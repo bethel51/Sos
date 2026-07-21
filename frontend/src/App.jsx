@@ -427,6 +427,26 @@ export default function App() {
           </div>
         ))}
       </div>
+
+      {/* Mobile Bottom Tab Navigation */}
+      <div className="mobile-bottom-nav">
+        <button className={`mobile-nav-item ${screenState === 'home' ? 'active' : ''}`} onClick={() => setScreenState('home')}>
+          <span style={{ fontSize: '20px' }}>🏠</span>
+          <span>Home</span>
+        </button>
+        <button className={`mobile-nav-item ${screenState === 'contacts' ? 'active' : ''}`} onClick={() => setScreenState('contacts')}>
+          <span style={{ fontSize: '20px' }}>👥</span>
+          <span>Contacts</span>
+        </button>
+        <button className={`mobile-nav-item ${screenState === 'zones' ? 'active' : ''}`} onClick={() => setScreenState('zones')}>
+          <span style={{ fontSize: '20px' }}>📍</span>
+          <span>Zones</span>
+        </button>
+        <button className={`mobile-nav-item ${screenState === 'history' ? 'active' : ''}`} onClick={() => setScreenState('history')}>
+          <span style={{ fontSize: '20px' }}>📋</span>
+          <span>History</span>
+        </button>
+      </div>
     </div>
   );
 }
