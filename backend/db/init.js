@@ -11,30 +11,55 @@ const Settings = require('../models/settings');
 
 const DB_JSON_PATH = path.join(__dirname, '..', '..', 'db.json');
 
+function getDirectMongoUri(srvUri) {
+  if (!srvUri || !srvUri.startsWith('mongodb+srv://')) return srvUri;
+  try {
+    const match = srvUri.match(/^mongodb\+srv:\/\/([^:]+):([^@]+)@([^/]+)\/([^?]*)/);
+    if (match) {
+      const [, user, pass, host, db] = match;
+      const hostParts = host.split('.');
+      const prefix = hostParts[0];
+      const domain = hostParts.slice(1).join('.');
+
+      return `mongodb://${user}:${pass}@${prefix}-shard-00-00.${domain}:27017,${prefix}-shard-00-01.${domain}:27017,${prefix}-shard-00-02.${domain}:27017/${db}?ssl=true&authSource=admin&retryWrites=true&w=majority`;
+    }
+  } catch (e) {
+    console.error('Failed parsing SRV URI for direct fallback:', e);
+  }
+  return srvUri;
+}
+
 async function initializeDatabase() {
   console.log('Initializing MongoDB database...');
 
   // Ensure DB connection is ready
   if (mongoose.connection.readyState === 0) {
     const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/leadcity-sos';
+    let targetUri = MONGODB_URI;
     
     let retries = 5;
     while (retries > 0) {
       try {
-        await mongoose.connect(MONGODB_URI, {
+        await mongoose.connect(targetUri, {
           serverSelectionTimeoutMS: 5000,
-          family: 4 // Force IPv4 to resolve DNS resolution issues on hosting platforms
+          family: 4
         });
         console.log('Successfully connected to MongoDB.');
         break;
       } catch (err) {
         retries -= 1;
-        console.error(`MongoDB connection attempt failed. Retries left: ${retries}. Error: ${err.message}`);
+        console.error(`MongoDB connection attempt failed (${5 - retries}/5): ${err.message}`);
+        
+        // If SRV DNS fails (ENOTFOUND), switch to direct seedlist URI
+        if ((err.message.includes('ENOTFOUND') || err.message.includes('querySrv')) && targetUri.startsWith('mongodb+srv://')) {
+          console.warn('[FALLBACK] querySrv DNS lookup failed on hosting provider. Switching to direct MongoDB ReplicaSet URI...');
+          targetUri = getDirectMongoUri(MONGODB_URI);
+        }
+
         if (retries === 0) {
           throw err;
         }
-        // Wait 3 seconds before retrying
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
   }
@@ -99,7 +124,6 @@ async function initializeDatabase() {
             // Migrate incidents
             const history = dbJson.history?.[user.id] || [];
             for (const incident of history) {
-              // Convert photo structures
               const formattedPhotos = Array.isArray(incident.photos)
                 ? incident.photos.map(p => ({ photoData: typeof p === 'string' ? p : p.photoData }))
                 : [];
@@ -112,7 +136,7 @@ async function initializeDatabase() {
                 startTime: incident.startTime || '',
                 date: incident.date || '',
                 type: incident.type || 'Unspecified Threat',
-                lastLocationLat: incident.lastLocation?.lat || 4.8156, // Lead city lat/lng is Nigeria-based or standard
+                lastLocationLat: incident.lastLocation?.lat || 4.8156,
                 lastLocationLng: incident.lastLocation?.lng || 7.0498,
                 endTime: incident.endTime || '',
                 duration: incident.duration || '',
