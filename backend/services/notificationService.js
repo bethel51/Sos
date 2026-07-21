@@ -65,9 +65,7 @@ const notificationService = {
     if (brevoApiKey) {
       try {
         const https = require('https');
-        const fromEmail = (process.env.SMTP_FROM && !process.env.SMTP_FROM.toLowerCase().includes('@gmail.com')) 
-          ? process.env.SMTP_FROM 
-          : (process.env.SMTP_USER || 'ad0edf001@smtp-brevo.com');
+        const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'ad0edf001@smtp-brevo.com';
         const postData = JSON.stringify({
           sender: {
             name: 'Silent SOS Alert System',
@@ -131,9 +129,7 @@ const notificationService = {
     }
 
     try {
-      const fromEmail = (process.env.SMTP_FROM && !process.env.SMTP_FROM.toLowerCase().includes('@gmail.com')) 
-        ? process.env.SMTP_FROM 
-        : (smtpUser || 'no-reply@silentsos.com');
+      const fromEmail = process.env.SMTP_FROM || smtpUser || 'no-reply@silentsos.com';
       const info = await mailTransporter.sendMail({
         from: `"Silent SOS Alert System" <${fromEmail}>`,
         to,
