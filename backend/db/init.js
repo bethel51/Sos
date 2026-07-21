@@ -17,7 +17,25 @@ async function initializeDatabase() {
   // Ensure DB connection is ready
   if (mongoose.connection.readyState === 0) {
     const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/leadcity-sos';
-    await mongoose.connect(MONGODB_URI);
+    
+    let retries = 5;
+    while (retries > 0) {
+      try {
+        await mongoose.connect(MONGODB_URI, {
+          serverSelectionTimeoutMS: 5000
+        });
+        console.log('Successfully connected to MongoDB.');
+        break;
+      } catch (err) {
+        retries -= 1;
+        console.error(`MongoDB connection attempt failed. Retries left: ${retries}. Error: ${err.message}`);
+        if (retries === 0) {
+          throw err;
+        }
+        // Wait 3 seconds before retrying
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
   }
 
   // Import Seed/Existing Data from db.json if configured or in development
