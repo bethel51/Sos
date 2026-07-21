@@ -78,6 +78,46 @@ export default function Dashboard({
         </div>
       </div>
 
+      {/* Live SOS Evidence Log Panel (Visible when SOS is active) */}
+      {activeIncident && (
+        <div className="glass-card" style={{ gridColumn: '1 / -1', border: '1px solid var(--border-danger)', background: 'rgba(220, 38, 38, 0.02)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
+            <h3 style={{ fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary-red)' }}>
+              📸 Live Incident Evidence Stream
+            </h3>
+            <span className="badge badge-live">Capture Active</span>
+          </div>
+
+          {!activeIncident.attachments || activeIncident.attachments.length === 0 ? (
+            <p style={{ color: 'var(--text-secondary)', fontSize: '14px', fontStyle: 'italic', textAlign: 'center', padding: '24px' }}>
+              Waiting for live media capture streams... snap shots will begin appearing shortly.
+            </p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '16px' }}>
+              {activeIncident.attachments.map((att, idx) => (
+                <div key={idx} className="glass-card" style={{ padding: '8px', background: 'var(--bg-surface-elevated)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {att.fileType?.startsWith('image') || att.photo || (att.fileUrl && att.fileUrl.endsWith('.jpg')) ? (
+                    <img 
+                      src={att.fileUrl || (att.photo ? att.photo.src : '/placeholder.jpg')} 
+                      alt="SOS Evidence" 
+                      style={{ width: '100%', height: '120px', objectFit: 'cover', borderRadius: 'var(--radius-sm)' }} 
+                    />
+                  ) : (
+                    <div style={{ width: '100%', height: '120px', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>
+                      🎙️
+                    </div>
+                  )}
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Seq #{idx + 1}</span>
+                    <span>{att.createdAt ? new Date(att.createdAt).toLocaleTimeString() : 'Live'}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Side Quick Actions & Info Panel */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         {/* Safety Timer Card */}
