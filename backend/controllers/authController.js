@@ -25,6 +25,10 @@ function formatUser(user) {
   };
 }
 
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 const authController = {
   // Send Signup OTP
   async sendSignupOTP(req, res) {
@@ -34,14 +38,17 @@ const authController = {
     }
 
     try {
+      const trimmedEmail = email.trim();
+      const trimmedPhone = phone.trim();
+
       // Check for existing email
-      const existingEmail = await User.findOne({ email: new RegExp(`^${email}$`, 'i') });
+      const existingEmail = await User.findOne({ email: new RegExp(`^${escapeRegExp(trimmedEmail)}$`, 'i') });
       if (existingEmail) {
         return res.status(400).json({ error: 'Email is already registered.' });
       }
 
       // Check for existing phone
-      const existingPhone = await User.findOne({ phone });
+      const existingPhone = await User.findOne({ phone: trimmedPhone });
       if (existingPhone) {
         return res.status(400).json({ error: 'Phone number is already registered.' });
       }
@@ -51,14 +58,14 @@ const authController = {
       // Generate 4-digit verification code
       const code = Math.floor(1000 + Math.random() * 9000).toString();
       if (isDevMode) {
-        console.log(`\n====================================\n[OTP DEBUG] SIGNUP CODE FOR ${email} IS: ${code}\n====================================\n`);
+        console.log(`\n====================================\n[OTP DEBUG] SIGNUP CODE FOR ${trimmedEmail} IS: ${code}\n====================================\n`);
       }
 
       // Store in memory map
-      pendingRegistrations.set(email.toLowerCase(), {
+      pendingRegistrations.set(trimmedEmail.toLowerCase(), {
         name,
-        email,
-        phone,
+        email: trimmedEmail,
+        phone: trimmedPhone,
         password,
         pin,
         code,
@@ -68,7 +75,7 @@ const authController = {
       // Send Email via Brevo (Nodemailer)
       const notificationService = require('../services/notificationService');
       await notificationService.sendEmail({
-        to: email,
+        to: trimmedEmail,
         subject: `Lead City SOS - Verification Code: ${code}`,
         bodyText: `Your verification code is ${code}. Please enter this code to complete your account setup.`,
         bodyHtml: `
@@ -103,13 +110,14 @@ const authController = {
     }
 
     try {
-      const pending = pendingRegistrations.get(email.toLowerCase());
+      const trimmedEmail = email.trim();
+      const pending = pendingRegistrations.get(trimmedEmail.toLowerCase());
       if (!pending) {
         return res.status(400).json({ error: 'No pending registration request found for this email. Please submit the form again.' });
       }
 
       if (pending.expiresAt < Date.now()) {
-        pendingRegistrations.delete(email.toLowerCase());
+        pendingRegistrations.delete(trimmedEmail.toLowerCase());
         return res.status(400).json({ error: 'Verification code has expired. Please sign up again.' });
       }
 
@@ -148,7 +156,7 @@ const authController = {
       );
 
       // Remove from pending registrations cache
-      pendingRegistrations.delete(email.toLowerCase());
+      pendingRegistrations.delete(trimmedEmail.toLowerCase());
 
       res.status(201).json({ user: formatUser(newUser), token });
     } catch (err) {
@@ -165,7 +173,8 @@ const authController = {
     }
 
     try {
-      const user = await User.findOne({ email: new RegExp(`^${email}$`, 'i') });
+      const trimmedEmail = email.trim();
+      const user = await User.findOne({ email: new RegExp(`^${escapeRegExp(trimmedEmail)}$`, 'i') });
       if (!user) {
         return res.status(400).json({ error: 'User not found.' });
       }
@@ -246,7 +255,8 @@ const authController = {
     }
 
     try {
-      const user = await User.findOne({ email: new RegExp(`^${email}$`, 'i') });
+      const trimmedEmail = email.trim();
+      const user = await User.findOne({ email: new RegExp(`^${escapeRegExp(trimmedEmail)}$`, 'i') });
       if (!user) {
         return res.status(404).json({ error: 'Email address not registered.' });
       }
@@ -255,16 +265,16 @@ const authController = {
 
       const code = Math.floor(1000 + Math.random() * 9000).toString();
       if (isDevMode) {
-        console.log(`\n====================================\n[OTP DEBUG] PASSWORD RESET CODE FOR ${email} IS: ${code}\n====================================\n`);
+        console.log(`\n====================================\n[OTP DEBUG] PASSWORD RESET CODE FOR ${trimmedEmail} IS: ${code}\n====================================\n`);
       }
-      pendingPasswordResets.set(email.toLowerCase(), {
+      pendingPasswordResets.set(trimmedEmail.toLowerCase(), {
         code,
         expiresAt: Date.now() + 10 * 60 * 1000 // 10 mins
       });
 
       const notificationService = require('../services/notificationService');
       await notificationService.sendEmail({
-        to: email,
+        to: trimmedEmail,
         subject: `Lead City SOS - Password Reset OTP: ${code}`,
         bodyText: `Your password reset code is ${code}.`,
         bodyHtml: `
@@ -299,18 +309,19 @@ const authController = {
     }
 
     try {
-      const user = await User.findOne({ email: new RegExp(`^${email}$`, 'i') });
+      const trimmedEmail = email.trim();
+      const user = await User.findOne({ email: new RegExp(`^${escapeRegExp(trimmedEmail)}$`, 'i') });
       if (!user) {
         return res.status(404).json({ error: 'Email address not registered.' });
       }
 
-      const pending = pendingPasswordResets.get(email.toLowerCase());
+      const pending = pendingPasswordResets.get(trimmedEmail.toLowerCase());
       if (!pending) {
         return res.status(400).json({ error: 'No password reset request found for this email.' });
       }
 
       if (pending.expiresAt < Date.now()) {
-        pendingPasswordResets.delete(email.toLowerCase());
+        pendingPasswordResets.delete(trimmedEmail.toLowerCase());
         return res.status(400).json({ error: 'Password reset code has expired.' });
       }
 
@@ -323,7 +334,7 @@ const authController = {
       await user.save();
 
       await Session.deleteMany({ userId: user.id });
-      pendingPasswordResets.delete(email.toLowerCase());
+      pendingPasswordResets.delete(trimmedEmail.toLowerCase());
 
       res.json({ success: true, message: 'Password updated successfully.' });
     } catch (err) {
